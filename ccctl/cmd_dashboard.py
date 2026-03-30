@@ -878,7 +878,7 @@ HTML = '''<!DOCTYPE html>
   <div class="label" id="dispatch-label"></div>
   <div class="row">
     <input id="dispatch-input" placeholder="Send instruction to coordinator..."
-      onkeydown="onEnter(event, sendToCoordinator)">
+      onkeyup="onEnter(event, sendToCoordinator)">
     <button onclick="sendToCoordinator()">Dispatch</button>
   </div>
 </div>
@@ -995,7 +995,7 @@ function renderCard(s, i) {
       <div class="last-input">${esc(s.last_input || "-")}</div>
       ${previewHtml}
       <div class="actions" onclick="event.stopPropagation()">
-        <input id="p${i}" placeholder="send prompt..." onkeydown="onEnter(event, ()=>sendPrompt('${esc(s.name)}',${i}))">
+        <input id="p${i}" placeholder="send prompt..." onkeyup="onEnter(event, ()=>sendPrompt('${esc(s.name)}',${i}))">
         <button class="btn" onclick="sendPrompt('${esc(s.name)}',${i})">Send</button>
         <button class="btn pin${pinClass}" onclick="togglePin('${s.session_id}')">${pinLabel}</button>
         <button class="btn danger" onclick="confirmStop('${esc(s.name)}',${s.pid})">Stop</button>
