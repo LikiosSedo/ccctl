@@ -286,6 +286,81 @@ def _do_focus(target: str, prompt: str | None) -> dict:
     return result
 
 
+_DISPATCH_PREFIX = (
+    "[ccctl dispatch] You are the coordinator session. "
+    "Execute the instruction below using ccctl CLI commands "
+    "(ps, new, resume, focus, stop, summary, dashboard) as needed.\n\n"
+)
+
+
+def _do_send(target: str, prompt: str, as_coordinator: bool = False) -> dict:
+    """Send prompt to a session WITHOUT activating/focusing its window."""
+    if as_coordinator:
+        prompt = _DISPATCH_PREFIX + prompt
+    sessions = read_sessions(_claude_dir)
+    ccctl_names = load_names(_claude_dir)
+
+    session = None
+    for s in sessions:
+        sid = s.get("sessionId", "")
+        name = ccctl_names.get(sid) or s.get("name") or ""
+        if str(s.get("pid")) == target or name == target or sid.startswith(target):
+            session = s
+            break
+
+    if not session:
+        return {"ok": False, "error": f"Session not found: {target}"}
+
+    pid = session.get("pid")
+    if not check_alive(pid):
+        return {"ok": False, "error": f"Session not alive (PID {pid})"}
+
+    # Check foreground
+    try:
+        r = subprocess.run(
+            ["ps", "-o", "tty=,tpgid=,pgid=", "-p", str(pid)],
+            capture_output=True, text=True, timeout=5,
+        )
+        parts = r.stdout.strip().split()
+        if len(parts) < 3:
+            return {"ok": False, "error": "Cannot read process info"}
+        tty, tpgid, pgid = parts[0], parts[1], parts[2]
+        if not tty or tty == "??":
+            return {"ok": False, "error": f"No TTY for PID {pid}"}
+        if tpgid != pgid:
+            return {"ok": False, "error": "Session not at prompt"}
+        tty_path = f"/dev/{tty}"
+    except (subprocess.TimeoutExpired, OSError):
+        return {"ok": False, "error": "Failed to check process"}
+
+    # Silent inject — no activate, no tab switch
+    escaped = prompt.replace("\\", "\\\\").replace('"', '\\"')
+    script = f'''
+        tell application "iTerm2"
+            repeat with w in windows
+                repeat with t in tabs of w
+                    repeat with s in sessions of t
+                        if tty of s is "{tty_path}" then
+                            tell s to write text "{escaped}"
+                            return "ok"
+                        end if
+                    end repeat
+                end repeat
+            end repeat
+        end tell
+    '''
+    try:
+        r = subprocess.run(
+            ["osascript", "-e", script],
+            capture_output=True, text=True, timeout=5,
+        )
+        if r.stdout.strip() == "ok":
+            return {"ok": True, "sent": True}
+        return {"ok": False, "error": "Session tab not found"}
+    except (subprocess.TimeoutExpired, OSError):
+        return {"ok": False, "error": "AppleScript failed"}
+
+
 def _do_stop(target: str) -> dict:
     """Stop a session by SIGTERM."""
     sessions = read_sessions(_claude_dir)
@@ -357,6 +432,11 @@ class Handler(BaseHTTPRequestHandler):
             target = body.get("target", "")
             prompt = body.get("prompt")
             self._json_response(_do_focus(target, prompt if prompt else None))
+        elif parsed.path == "/api/send":
+            target = body.get("target", "")
+            prompt = body.get("prompt", "")
+            coordinator = body.get("coordinator", False)
+            self._json_response(_do_send(target, prompt, as_coordinator=coordinator))
         elif parsed.path == "/api/stop":
             target = body.get("target", "")
             self._json_response(_do_stop(target))
@@ -707,7 +787,7 @@ HTML = '''<!DOCTYPE html>
   <div class="label" id="dispatch-label"></div>
   <div class="row">
     <input id="dispatch-input" placeholder="Send instruction to coordinator..."
-      onkeydown="if(event.key==='Enter'&&!event.isComposing)sendToCoordinator()">
+      onkeydown="onEnter(event, sendToCoordinator)">
     <button onclick="sendToCoordinator()">Dispatch</button>
   </div>
 </div>
@@ -726,6 +806,10 @@ let history = [];
 let currentTab = "live";
 let viewMode = "flat";
 let searchTimer = null;
+let _composing = false;
+document.addEventListener("compositionstart", () => _composing = true);
+document.addEventListener("compositionend", () => _composing = false);
+function onEnter(event, fn) { if (event.key === "Enter" && !_composing) fn(); }
 
 async function refresh() {
   try {
@@ -786,7 +870,7 @@ function renderCard(s, i) {
       <div class="meta">${esc(s.project)} \\u00b7 PID ${s.pid}</div>
       <div class="last-input">${esc(s.last_input || "-")}</div>
       <div class="actions" onclick="event.stopPropagation()">
-        <input id="p${i}" placeholder="send prompt..." onkeydown="if(event.key==='Enter'&&!event.isComposing)sendPrompt('${esc(s.name)}',${i})">
+        <input id="p${i}" placeholder="send prompt..." onkeydown="onEnter(event, ()=>sendPrompt('${esc(s.name)}',${i}))">
         <button class="btn" onclick="sendPrompt('${esc(s.name)}',${i})">Send</button>
         <button class="btn pin${pinClass}" onclick="togglePin('${s.session_id}')">${pinLabel}</button>
         <button class="btn danger" onclick="confirmStop('${esc(s.name)}',${s.pid})">Stop</button>
@@ -969,17 +1053,17 @@ async function sendToCoordinator() {
   if (!prompt) return;
   const coord = sessions.find(s => s.is_coordinator);
   if (!coord) { toast("No coordinator pinned", false); return; }
-  const r = await fetch("/api/focus", {
+  const r = await fetch("/api/send", {
     method: "POST",
     headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({target: coord.name, prompt: prompt}),
+    body: JSON.stringify({target: coord.name, prompt: prompt, coordinator: true}),
   });
   const res = await r.json();
-  if (res.ok && res.prompt_sent !== false) {
+  if (res.ok) {
     toast("Dispatched to " + coord.name, true);
     input.value = "";
   } else {
-    toast(res.prompt_error || res.error || "Failed", false);
+    toast(res.error || "Failed", false);
   }
 }
 
