@@ -1,0 +1,13 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ccctl"
+version = "0.1.0"
+description = "Claude Code session & task control plane"
+requires-python = ">=3.10"
+license = "MIT"
+
+[project.scripts]
+ccctl = "ccctl.cli:main"
