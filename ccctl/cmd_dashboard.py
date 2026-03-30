@@ -516,33 +516,26 @@ class Handler(BaseHTTPRequestHandler):
                         target_name = r["name"]
                         break
                 if target_name:
-                    # Group sessions by project
-                    projects: dict[str, list] = {}
-                    for r in rows:
-                        projects.setdefault(r["project"], []).append(r)
-                    topo_parts = []
-                    for proj, members in sorted(projects.items()):
-                        sessions_str = ", ".join(
-                            f"{r['name']}({r['status']})" for r in members
-                        )
-                        topo_parts.append(f"  [{proj}] {sessions_str}")
-                    topo = "\n".join(topo_parts)
-                    total = len(rows)
-                    active = sum(1 for r in rows if r["status"] == "active")
-
                     init_prompt = (
                         "[ccctl coordinator init]\n"
-                        f"You are now the coordinator. {total} live sessions, {active} active.\n\n"
-                        "## Session Topology\n" + topo + "\n\n"
-                        "## Commands\n"
-                        "- `ccctl ps --json` — list all sessions\n"
+                        "You are now the coordinator session. Your role:\n"
+                        "1. Manage and dispatch Claude Code sessions via `ccctl` CLI\n"
+                        "2. When you receive `[ccctl dispatch]` messages, execute the instruction\n\n"
+                        "## First Step\n"
+                        "Run `ccctl ps --json` now to understand the current session topology.\n\n"
+                        "## Key Commands\n"
+                        "- `ccctl ps --json` — current live sessions (run this FIRST, and before every dispatch)\n"
+                        "- `ccctl summary -v` — full project topology and history\n"
                         "- `ccctl new --name <n> --cwd <dir> \"prompt\"` — start new session\n"
                         "- `ccctl resume <name>` — resume stopped session\n"
                         "- `ccctl focus <name> \"prompt\"` — switch to session + send prompt\n"
                         "- `ccctl stop <name>` — stop session (preserves data)\n"
-                        "- `ccctl name <target> <name>` — rename session\n"
-                        "- `ccctl summary -v` — full project overview\n\n"
-                        "When you receive `[ccctl dispatch]` messages, execute the user's instruction."
+                        "- `ccctl name <target> <name>` — rename session\n\n"
+                        "## Rules\n"
+                        "- ALWAYS run `ccctl ps --json` before acting on a dispatch to get fresh state\n"
+                        "- Use `--json` output for reliable parsing\n"
+                        "- When creating sessions, use meaningful names and correct project cwd\n"
+                        "- Confirm destructive actions (stop) before executing"
                     )
                     _do_send(target_name, init_prompt, as_coordinator=False)
                 self._json_response({"ok": True, "pinned": True})
