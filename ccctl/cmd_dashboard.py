@@ -314,6 +314,28 @@ _DISPATCH_PREFIX = (
     "(ps, new, resume, focus, stop, summary, dashboard) as needed.\n\n"
 )
 
+_COORDINATOR_INIT = (
+    "[ccctl coordinator init]\n"
+    "You are now the coordinator session. Your role:\n"
+    "1. Manage and dispatch Claude Code sessions via ccctl CLI\n"
+    "2. When you receive [ccctl dispatch] messages, execute the instruction\n\n"
+    "## First Step\n"
+    "Run `ccctl ps --json` now to understand the current session topology.\n\n"
+    "## Key Commands\n"
+    "- `ccctl ps --json` — current live sessions (run FIRST, and before every dispatch)\n"
+    "- `ccctl summary -v` — full project topology and history\n"
+    "- `ccctl new --name <n> --cwd <dir> \"prompt\"` — start new session\n"
+    "- `ccctl resume <name>` — resume stopped session\n"
+    "- `ccctl focus <name> \"prompt\"` — switch to session + send prompt\n"
+    "- `ccctl stop <name>` — stop session (preserves data)\n"
+    "- `ccctl name <target> <name>` — rename session\n\n"
+    "## Rules\n"
+    "- ALWAYS run `ccctl ps --json` before acting on a dispatch to get fresh state\n"
+    "- Use `--json` output for reliable parsing\n"
+    "- When creating sessions, use meaningful names and correct project cwd\n"
+    "- Confirm destructive actions (stop) before executing"
+)
+
 
 def _do_send(target: str, prompt: str, as_coordinator: bool = False) -> dict:
     """Send prompt to a session WITHOUT activating/focusing its window."""
@@ -515,6 +537,14 @@ class Handler(BaseHTTPRequestHandler):
                     if r["session_id"] == sid:
                         target_name = r["name"]
                         break
+                # Auto-send init prompt to new coordinator (silent, no window switch)
+                target_name = None
+                for r in _build_rows():
+                    if r["session_id"] == sid:
+                        target_name = r["name"]
+                        break
+                if target_name:
+                    _do_send(target_name, _COORDINATOR_INIT, as_coordinator=False)
                 self._json_response({"ok": True, "pinned": True})
         else:
             self.send_error(404)
@@ -1170,27 +1200,6 @@ async function doStop(name, btn) {
   if (res.ok) setTimeout(refresh, 500);
 }
 
-const INIT_PROMPT = `[ccctl coordinator init]
-You are now the coordinator session. Your role:
-1. Manage and dispatch Claude Code sessions via ccctl CLI
-2. When you receive [ccctl dispatch] messages, execute the instruction
-
-First Step: Run ccctl ps --json now to understand the current session topology.
-
-Key Commands:
-- ccctl ps --json (run FIRST, and before every dispatch)
-- ccctl summary -v (full project topology)
-- ccctl new --name <n> --cwd <dir> "prompt"
-- ccctl resume <name>
-- ccctl focus <name> "prompt"
-- ccctl stop <name>
-- ccctl name <target> <name>
-
-Rules:
-- ALWAYS run ccctl ps --json before acting on a dispatch
-- Use meaningful names and correct project cwd for new sessions
-- Confirm destructive actions (stop) before executing`;
-
 async function togglePin(sid) {
   const r = await fetch("/api/pin", {
     method: "POST",
@@ -1198,15 +1207,8 @@ async function togglePin(sid) {
     body: JSON.stringify({session_id: sid}),
   });
   const res = await r.json();
-  if (res.ok && res.pinned) {
-    toast("Pinned \\u2014 init prompt ready in dispatch bar", true);
-    await refresh();
-    const input = document.getElementById("dispatch-input");
-    if (input) { input.value = INIT_PROMPT; input.focus(); }
-  } else {
-    toast(res.unpinned ? "Unpinned" : "Failed", res.ok);
-    if (res.ok) refresh();
-  }
+  toast(res.ok ? (res.pinned ? "Pinned \\u2014 init sent" : "Unpinned") : "Failed", res.ok);
+  if (res.ok) refresh();
 }
 
 async function sendToCoordinator() {
