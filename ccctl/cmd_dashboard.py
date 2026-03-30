@@ -646,15 +646,16 @@ HTML = '''<!DOCTYPE html>
     border-radius: 4px;
   }
   .rename-btn {
-    font-size: 11px;
-    color: #555;
+    font-size: 14px;
+    color: #888;
     cursor: pointer;
-    margin-left: 4px;
+    margin-left: 6px;
+    padding: 0 4px;
     opacity: 0;
     transition: opacity 0.15s;
   }
   .card:hover .rename-btn { opacity: 1; }
-  .rename-btn:hover { color: #8be9fd; }
+  .rename-btn:hover { color: #8be9fd; background: #8be9fd22; border-radius: 3px; }
   .rename-input {
     background: #1a1a2e;
     border: 1px solid #8be9fd;
