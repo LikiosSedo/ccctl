@@ -972,9 +972,28 @@ function setView(mode) {
   render();
 }
 
+function saveInputs() {
+  const saved = {};
+  document.querySelectorAll(".card input").forEach(el => {
+    if (el.value) saved[el.id] = el.value;
+  });
+  const di = document.getElementById("dispatch-input");
+  if (di && di.value) saved["dispatch-input"] = di.value;
+  return saved;
+}
+
+function restoreInputs(saved) {
+  for (const [id, val] of Object.entries(saved)) {
+    const el = document.getElementById(id);
+    if (el) el.value = val;
+  }
+}
+
 function render() {
+  const saved = saveInputs();
   if (currentTab === "live") renderLive();
   else renderHistory();
+  restoreInputs(saved);
 }
 
 function renderCard(s, i) {
