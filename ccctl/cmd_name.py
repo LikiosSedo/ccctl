@@ -3,13 +3,59 @@
 from __future__ import annotations
 
 import os
+import subprocess
 import sys
-
 import time
 
 from ccctl.output import format_ago, shorten_path
 from ccctl.sources import check_alive, lookup_session_project, read_last_messages, read_sessions, resolve_session_id
 from ccctl.store import load_names, save_names, set_name
+
+
+def _inject_rename(pid: int, new_name: str) -> bool:
+    """Inject /rename into a live Claude Code session via iTerm2 AppleScript.
+
+    Finds the iTerm2 session by matching TTY, then sends /rename command.
+    Returns True if successfully sent, False otherwise (non-iTerm2, etc).
+    """
+    if os.environ.get("TERM_PROGRAM", "") != "iTerm.app":
+        return False
+
+    # Get TTY for the process
+    try:
+        result = subprocess.run(
+            ["ps", "-o", "tty=", "-p", str(pid)],
+            capture_output=True, text=True, timeout=5,
+        )
+        tty = result.stdout.strip()
+        if not tty or tty == "??":
+            return False
+        tty_path = f"/dev/{tty}"
+    except (subprocess.TimeoutExpired, OSError):
+        return False
+
+    script = f'''
+        tell application "iTerm2"
+            repeat with w in windows
+                repeat with t in tabs of w
+                    repeat with s in sessions of t
+                        if tty of s is "{tty_path}" then
+                            tell s to write text "/rename {new_name}"
+                            return "ok"
+                        end if
+                    end repeat
+                end repeat
+            end repeat
+        end tell
+    '''
+    try:
+        r = subprocess.run(
+            ["osascript", "-e", script],
+            capture_output=True, text=True, timeout=5,
+        )
+        return r.stdout.strip() == "ok"
+    except (subprocess.TimeoutExpired, OSError):
+        return False
 
 
 def _derive_project(cwd: str) -> str:
@@ -79,7 +125,19 @@ def _set_name(args):
         return
 
     set_name(args.claude_dir, sid, args.name_value)
-    print(f"Named {label} → {args.name_value}")
+
+    # Sync to live Claude Code session via /rename
+    synced = False
+    sessions = read_sessions(args.claude_dir)
+    for s in sessions:
+        if s.get("sessionId") == sid:
+            pid = s.get("pid")
+            if pid and check_alive(pid):
+                synced = _inject_rename(pid, args.name_value)
+            break
+
+    label_suffix = " (synced)" if synced else ""
+    print(f"Named {label} → {args.name_value}{label_suffix}")
 
 
 def _auto_name(args):
@@ -121,7 +179,9 @@ def _auto_name(args):
             name = project
         sid = s["sessionId"]
         existing_ccctl[sid] = name
-        print(f"  PID {s['pid']:>5} → {name}")
+        synced = _inject_rename(s["pid"], name)
+        sync_mark = " (synced)" if synced else ""
+        print(f"  PID {s['pid']:>5} → {name}{sync_mark}")
 
     save_names(args.claude_dir, existing_ccctl)
     print(f"\nNamed {len(unnamed)} sessions.")
