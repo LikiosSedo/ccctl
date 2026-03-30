@@ -12,15 +12,74 @@ from ccctl.sources import check_alive, lookup_session_project, read_last_message
 from ccctl.store import load_names, save_names, set_name
 
 
-def _inject_rename(pid: int, new_name: str) -> bool:
-    """Inject /rename into a live Claude Code session via iTerm2 AppleScript.
+def _detect_terminal() -> str:
+    term = os.environ.get("TERM_PROGRAM", "")
+    if "iTerm" in term:
+        return "iterm"
+    if "Apple_Terminal" in term:
+        return "terminal"
+    if os.environ.get("TMUX"):
+        return "tmux"
+    return "terminal"
 
-    Finds the iTerm2 session by matching TTY, then sends /rename command.
-    Returns True if successfully sent, False otherwise (non-iTerm2, etc).
-    """
-    if os.environ.get("TERM_PROGRAM", "") != "iTerm.app":
+
+def _focus_tty(tty_path: str) -> bool:
+    from ccctl.output import applescript_str
+
+    safe_tty = applescript_str(tty_path)
+    terminal = _detect_terminal()
+
+    if terminal == "iterm":
+        script = f'''
+            tell application "iTerm2"
+                activate
+                repeat with w in windows
+                    repeat with t in tabs of w
+                        repeat with s in sessions of t
+                            if tty of s is "{safe_tty}" then
+                                select t
+                                set index of w to 1
+                                return "ok"
+                            end if
+                        end repeat
+                    end repeat
+                end repeat
+            end tell
+        '''
+    elif terminal == "terminal":
+        script = f'''
+            tell application "Terminal"
+                activate
+                repeat with w in windows
+                    repeat with t in tabs of w
+                        if tty of t is "{safe_tty}" then
+                            set selected of t to true
+                            set frontmost of w to true
+                            return "ok"
+                        end if
+                    end repeat
+                end repeat
+            end tell
+        '''
+    else:
         return False
 
+    try:
+        r = subprocess.run(
+            ["osascript", "-e", script],
+            capture_output=True, text=True, timeout=5,
+        )
+        return r.stdout.strip() == "ok"
+    except (subprocess.TimeoutExpired, OSError):
+        return False
+
+
+def _inject_rename(pid: int, new_name: str) -> bool:
+    """Inject /rename into a live Claude Code session.
+
+    Finds the live terminal session by matching TTY, then sends /rename.
+    Returns True if successfully sent, False otherwise.
+    """
     # Get TTY and verify target is the foreground process on that TTY
     try:
         result = subprocess.run(
@@ -42,22 +101,43 @@ def _inject_rename(pid: int, new_name: str) -> bool:
         return False
 
     from ccctl.output import applescript_str
-    safe_tty = applescript_str(tty_path)
     safe_name = applescript_str(new_name)
-    script = f'''
-        tell application "iTerm2"
-            repeat with w in windows
-                repeat with t in tabs of w
-                    repeat with s in sessions of t
-                        if tty of s is "{safe_tty}" then
-                            tell s to write text "/rename {safe_name}"
+    terminal = _detect_terminal()
+
+    if terminal == "iterm":
+        safe_tty = applescript_str(tty_path)
+        script = f'''
+            tell application "iTerm2"
+                repeat with w in windows
+                    repeat with t in tabs of w
+                        repeat with s in sessions of t
+                            if tty of s is "{safe_tty}" then
+                                tell s to write text "/rename {safe_name}"
+                                return "ok"
+                            end if
+                        end repeat
+                    end repeat
+                end repeat
+            end tell
+        '''
+    elif terminal == "terminal":
+        safe_tty = applescript_str(tty_path)
+        script = f'''
+            tell application "Terminal"
+                activate
+                repeat with w in windows
+                    repeat with t in tabs of w
+                        if tty of t is "{safe_tty}" then
+                            do script "/rename {safe_name}" in t
                             return "ok"
                         end if
                     end repeat
                 end repeat
-            end repeat
-        end tell
-    '''
+            end tell
+        '''
+    else:
+        return False
+
     try:
         r = subprocess.run(
             ["osascript", "-e", script],
