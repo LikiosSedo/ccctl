@@ -55,6 +55,9 @@ def main():
     resume_p.add_argument("target", help="PID, name, or session ID prefix")
     resume_p.add_argument("--force", action="store_true", help="Resume even if session is alive")
 
+    focus_p = sub.add_parser("focus", help="Switch to a running session's terminal tab")
+    focus_p.add_argument("target", help="PID, name, or session ID prefix")
+
     new_p = sub.add_parser("new", help="Start a new Claude Code session in a new terminal")
     new_p.add_argument("prompt", nargs="?", help="Initial prompt")
     new_p.add_argument("--name", help="Session name")
@@ -80,6 +83,7 @@ def main():
         "name":   lambda: _lazy("ccctl.cmd_name", "run", args),
         "stop":   lambda: _lazy("ccctl.cmd_stop", "run_stop", args),
         "gc":     lambda: _lazy("ccctl.cmd_stop", "run_gc", args),
+        "focus":  lambda: _lazy("ccctl.cmd_focus", "run", args),
         "resume": lambda: _lazy("ccctl.cmd_open", "run_resume", args),
         "new":    lambda: _lazy("ccctl.cmd_open", "run_new", args),
         "summary": lambda: _lazy("ccctl.cmd_summary", "run", args),
