@@ -287,7 +287,7 @@ def _do_focus(target: str, prompt: str | None) -> dict:
                     repeat with t in tabs of w
                         repeat with s in sessions of t
                             if tty of s is "{tty_path}" then
-                                tell s to write text "{escaped}"
+                                tell s to write text (ASCII character 27) & "i" & "{escaped}"
                                 return "ok"
                             end if
                         end repeat
@@ -380,13 +380,14 @@ def _do_send(target: str, prompt: str, as_coordinator: bool = False) -> dict:
     # Silent inject — no activate, no tab switch
     # Replace newlines with spaces to prevent premature submission
     escaped = prompt.replace("\n", " ").replace("\\", "\\\\").replace('"', '\\"')
+    # Escape (ensure NORMAL mode) + i (enter INSERT mode) + prompt
     script = f'''
         tell application "iTerm2"
             repeat with w in windows
                 repeat with t in tabs of w
                     repeat with s in sessions of t
                         if tty of s is "{tty_path}" then
-                            tell s to write text "{escaped}"
+                            tell s to write text (ASCII character 27) & "i" & "{escaped}"
                             return "ok"
                         end if
                     end repeat

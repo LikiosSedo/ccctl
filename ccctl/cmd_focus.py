@@ -95,7 +95,7 @@ def _send_prompt_iterm(tty: str, prompt: str) -> bool:
                 repeat with t in tabs of w
                     repeat with s in sessions of t
                         if tty of s is "{tty}" then
-                            tell s to write text "{escaped}"
+                            tell s to write text (ASCII character 27) & "i" & "{escaped}"
                             return "ok"
                         end if
                     end repeat
