@@ -21,14 +21,21 @@ def _inject_rename(pid: int, new_name: str) -> bool:
     if os.environ.get("TERM_PROGRAM", "") != "iTerm.app":
         return False
 
-    # Get TTY for the process
+    # Get TTY and verify target is the foreground process on that TTY
     try:
         result = subprocess.run(
-            ["ps", "-o", "tty=", "-p", str(pid)],
+            ["ps", "-o", "tty=,tpgid=,pgid=", "-p", str(pid)],
             capture_output=True, text=True, timeout=5,
         )
-        tty = result.stdout.strip()
+        parts = result.stdout.strip().split()
+        if len(parts) < 3:
+            return False
+        tty, tpgid, pgid = parts[0], parts[1], parts[2]
         if not tty or tty == "??":
+            return False
+        # tpgid = TTY's foreground process group, pgid = our target's group
+        # If they don't match, something else is in the foreground (e.g. shell)
+        if tpgid != pgid:
             return False
         tty_path = f"/dev/{tty}"
     except (subprocess.TimeoutExpired, OSError):
