@@ -53,6 +53,7 @@ def _focus_iterm(tty: str) -> bool:
                         repeat with s in sessions of t
                             if tty of s is "{tty}" then
                                 select t
+                                set index of w to 1
                                 return "ok"
                             end if
                         end repeat

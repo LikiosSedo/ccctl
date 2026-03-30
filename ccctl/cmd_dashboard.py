@@ -221,6 +221,7 @@ def _do_focus(target: str, prompt: str | None) -> dict:
                         repeat with s in sessions of t
                             if tty of s is "{tty_path}" then
                                 select t
+                                set index of w to 1
                                 return "ok"
                             end if
                         end repeat
