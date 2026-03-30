@@ -508,6 +508,27 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 config["coordinator"] = sid
                 save_config(_claude_dir, config)
+                # Auto-init: send current topology to new coordinator
+                rows = _build_rows()
+                target_name = None
+                for r in rows:
+                    if r["session_id"] == sid:
+                        target_name = r["name"]
+                        break
+                if target_name:
+                    topo = "\n".join(
+                        f"  {r['name']:<25} {r['project']:<20} {r['status']:<7} {r['last_input'][:40]}"
+                        for r in rows
+                    )
+                    init_prompt = (
+                        "[ccctl coordinator init] You are now the coordinator session for ccctl. "
+                        "Your job: manage and dispatch other Claude Code sessions via ccctl CLI.\n\n"
+                        "Current live sessions:\n" + topo + "\n\n"
+                        "Available commands: ccctl ps, ccctl new, ccctl resume, ccctl focus, "
+                        "ccctl stop, ccctl name, ccctl summary, ccctl dashboard.\n"
+                        "When you receive [ccctl dispatch] messages, execute the instruction using these commands."
+                    )
+                    _do_send(target_name, init_prompt, as_coordinator=False)
                 self._json_response({"ok": True, "pinned": True})
         else:
             self.send_error(404)
