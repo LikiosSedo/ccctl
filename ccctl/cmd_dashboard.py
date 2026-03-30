@@ -1203,7 +1203,7 @@ async function togglePin(sid) {
   });
   const res = await r.json();
   toast(res.ok ? (res.pinned ? "Pinned \\u2014 init sent" : "Unpinned") : "Failed", res.ok);
-  if (res.ok) refresh();
+  if (res.ok) await refresh();
 }
 
 async function sendToCoordinator() {
