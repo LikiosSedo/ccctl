@@ -21,6 +21,96 @@ from ccctl.store import load_names, load_config, save_config
 _claude_dir: Path = Path.home() / ".claude"
 
 
+def _read_terminal_states(pids: list[int]) -> dict[int, dict]:
+    """Read terminal content for multiple PIDs via a single AppleScript call.
+
+    Returns {pid: {"ready": bool, "preview": str}}.
+    """
+    if not pids:
+        return {}
+
+    # Build TTY -> PID mapping
+    tty_to_pid = {}
+    for pid in pids:
+        try:
+            r = subprocess.run(
+                ["ps", "-o", "tty=", "-p", str(pid)],
+                capture_output=True, text=True, timeout=5,
+            )
+            tty = r.stdout.strip()
+            if tty and tty != "??":
+                tty_to_pid[f"/dev/{tty}"] = pid
+        except (subprocess.TimeoutExpired, OSError):
+            continue
+
+    if not tty_to_pid:
+        return {}
+
+    # Single AppleScript to read all sessions
+    script = '''
+        set output to ""
+        tell application "iTerm2"
+            repeat with w in windows
+                repeat with t in tabs of w
+                    repeat with s in sessions of t
+                        set ttyPath to tty of s
+                        set c to contents of s
+                        set lineCount to count of paragraphs of c
+                        if lineCount > 6 then
+                            set lastLines to paragraphs (lineCount - 5) thru lineCount of c
+                        else
+                            set lastLines to paragraphs of c
+                        end if
+                        set lineText to ""
+                        repeat with L in lastLines
+                            set lineText to lineText & L & "|||"
+                        end repeat
+                        set output to output & ttyPath & ":::" & lineText & "\\n"
+                    end repeat
+                end repeat
+            end repeat
+        end tell
+        return output
+    '''
+    try:
+        r = subprocess.run(
+            ["osascript", "-e", script],
+            capture_output=True, text=True, timeout=10,
+        )
+        raw = r.stdout.strip()
+    except (subprocess.TimeoutExpired, OSError):
+        return {}
+
+    result = {}
+    for line in raw.split("\n"):
+        if ":::" not in line:
+            continue
+        tty_path, content = line.split(":::", 1)
+        tty_path = tty_path.strip()
+        pid = tty_to_pid.get(tty_path)
+        if pid is None:
+            continue
+
+        lines = [l.strip() for l in content.split("|||") if l.strip()]
+        # Detect ready state: look for ❯ prompt
+        ready = any("❯" in l for l in lines)
+        # Build preview: skip separator lines and status bar, find last meaningful text
+        preview_lines = []
+        for l in lines:
+            if l.startswith("─") or l.startswith("━"):
+                continue
+            if "INSERT" in l or "ctx:" in l or "sdliu@" in l:
+                continue
+            if l == "❯" or l.strip() == "":
+                continue
+            preview_lines.append(l)
+        preview = preview_lines[-1] if preview_lines else ""
+
+        result[pid] = {"ready": ready, "preview": preview[:120]}
+
+    return result
+
+
 def _build_rows() -> list[dict]:
     sessions = read_sessions(_claude_dir)
     if not sessions:
@@ -417,6 +507,12 @@ class Handler(BaseHTTPRequestHandler):
             self._html()
         elif parsed.path == "/api/ps":
             self._json_response(_build_rows())
+        elif parsed.path == "/api/status":
+            rows = _build_rows()
+            pids = [r["pid"] for r in rows if r["pid"]]
+            states = _read_terminal_states(pids)
+            # Return {pid: {ready, preview}}
+            self._json_response({str(k): v for k, v in states.items()})
         elif parsed.path == "/api/history":
             qs = parse_qs(parsed.query)
             query = qs.get("q", [""])[0]
@@ -590,6 +686,19 @@ HTML = '''<!DOCTYPE html>
     padding: 6px 8px;
     background: #1a1a2e;
     border-radius: 4px;
+  }
+  .card .preview {
+    font-size: 11px;
+    color: #6272a4;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-bottom: 8px;
+    padding: 4px 8px;
+    background: #1a1a2e;
+    border-radius: 4px;
+    border-left: 2px solid #6272a4;
+    font-style: italic;
   }
   .card .actions {
     display: flex;
@@ -804,6 +913,7 @@ HTML = '''<!DOCTYPE html>
 <script>
 let sessions = [];
 let history = [];
+let termStatus = {};
 let currentTab = "live";
 let viewMode = "flat";
 let searchTimer = null;
@@ -816,6 +926,14 @@ async function refresh() {
   try {
     const r = await fetch("/api/ps");
     sessions = await r.json();
+    if (currentTab === "live") render();
+  } catch (e) {}
+}
+
+async function refreshStatus() {
+  try {
+    const r = await fetch("/api/status");
+    termStatus = await r.json();
     if (currentTab === "live") render();
   } catch (e) {}
 }
@@ -862,14 +980,20 @@ function renderCard(s, i) {
   const coordClass = s.is_coordinator ? " coordinator" : "";
   const pinLabel = s.is_coordinator ? "Unpin" : "Pin";
   const pinClass = s.is_coordinator ? " active" : "";
+  const ts = termStatus[String(s.pid)] || {};
+  const ready = ts.ready;
+  const preview = ts.preview || "";
+  const readyDot = ready ? '<span style="color:#50fa7b" title="Ready for input">\\u25cf</span>' : '<span style="color:#ffb86c" title="Working...">\\u25cb</span>';
+  const previewHtml = preview ? '<div class="preview">' + esc(preview) + '</div>' : '';
   return `
     <div class="card ${s.status}${coordClass}" onclick="doFocus('${esc(s.name)}', event)">
       <div class="top">
-        <span class="name">${esc(s.name)}</span>
+        <span class="name">${readyDot} ${esc(s.name)}</span>
         <span class="badge ${s.status}">${s.status} \\u00b7 ${esc(s.last_active_ago)}</span>
       </div>
       <div class="meta">${esc(s.project)} \\u00b7 PID ${s.pid}</div>
       <div class="last-input">${esc(s.last_input || "-")}</div>
+      ${previewHtml}
       <div class="actions" onclick="event.stopPropagation()">
         <input id="p${i}" placeholder="send prompt..." onkeydown="onEnter(event, ()=>sendPrompt('${esc(s.name)}',${i}))">
         <button class="btn" onclick="sendPrompt('${esc(s.name)}',${i})">Send</button>
@@ -1086,7 +1210,9 @@ function toast(msg, ok) {
 }
 
 refresh();
+refreshStatus();
 setInterval(refresh, 5000);
+setInterval(refreshStatus, 20000);
 </script>
 </body>
 </html>'''
