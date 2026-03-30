@@ -990,6 +990,8 @@ function restoreInputs(saved) {
 }
 
 function render() {
+  // Skip render if user is editing a rename input
+  if (document.querySelector(".rename-input")) return;
   const saved = saveInputs();
   if (currentTab === "live") renderLive();
   else renderHistory();
