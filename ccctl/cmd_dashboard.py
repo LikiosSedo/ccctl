@@ -288,12 +288,16 @@ def _inject_prompt(tty_path: str, prompt: str) -> tuple[bool, str | None]:
         if not focused:
             return False, error
         script = f'''
+            set old_clipboard to the clipboard
+            set the clipboard to "{escaped}"
             tell application "System Events"
                 key code 53
                 keystroke "i"
-                keystroke "{escaped}"
-                return "ok"
+                keystroke "v" using command down
             end tell
+            delay 0.05
+            set the clipboard to old_clipboard
+            return "ok"
         '''
     else:
         return False, f"Prompt injection not supported in {terminal}"
