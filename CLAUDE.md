@@ -13,14 +13,14 @@ ccctl reads Claude Code's native data in real-time. It does not cache, mirror, o
 
 ```
 Claude Code owns (read-only for ccctl):     ccctl owns:
-├── ~/.claude/sessions/{pid}.json (ephemeral)   └── ~/.claude/ccctl/names.json
-├── ~/.claude/history.jsonl (persistent)
-└── conversation data (opaque)
+├── ~/.claude/sessions/{pid}.json (ephemeral)   ├── ~/.claude/ccctl/names.json
+├── ~/.claude/history.jsonl (persistent)        ├── ~/.claude/ccctl/config.json
+└── conversation data (opaque)                  └── ~/.claude/ccctl/status/{pid} (hook-written)
 ```
 
 - **Live sessions**: always read from sessions/*.json + process table. Zero caching.
 - **Stopped sessions**: session files disappear (Claude Code deletes on exit). ccctl recovers cwd from history.jsonl's `project` field — no snapshot store needed.
-- **ccctl's only owned data**: `names.json` (session_id → human-meaningful name).
+- **ccctl's owned data**: `names.json` (session names), `config.json` (coordinator), `status/` (hook-written ready/busy state).
 - **session_id** is the foreign key that connects everything.
 
 ## Architecture Decisions (and why)
@@ -54,9 +54,37 @@ Manage:    name [target] [name]  Label sessions (accepts PID, session_id prefix,
 
 Dispatch:  resume <target>       Reopen session in new terminal (iTerm2/Terminal/tmux)
            new [--name] [--cwd]  Launch new session in new terminal
+           focus <target> [prompt] Switch to session tab, optionally send prompt
+           dashboard [--port]    Local web UI for overview and dispatch
 ```
 
 All commands accept `--json` where applicable. Default scope for `summary`: `~/project`.
+
+## Hooks Integration
+
+ccctl uses Claude Code hooks for reliable ready/busy detection. Hooks write status to `~/.claude/ccctl/status/<pid>`:
+
+```json
+{
+  "hooks": {
+    "Stop": [{"hooks": [{"type": "command", "command": "mkdir -p ~/.claude/ccctl/status && echo idle > ~/.claude/ccctl/status/$PPID"}]}],
+    "UserPromptSubmit": [{"hooks": [{"type": "command", "command": "mkdir -p ~/.claude/ccctl/status && echo working > ~/.claude/ccctl/status/$PPID"}]}]
+  }
+}
+```
+
+This is event-driven (not polling), zero overhead, and 100% reliable. The dashboard reads these plain files to show ready/busy indicators.
+
+## Dashboard
+
+`ccctl dashboard` serves a local web UI on `localhost:8420`:
+
+- **Live tab**: Session cards with ready/busy indicators, grouped by project or status
+- **History tab**: Search and resume old sessions
+- **Coordinator mode**: Pin a session as coordinator, dispatch instructions from top bar
+- **Actions**: Focus (click card), Send prompt, Stop (with confirmation), Rename (✎ icon)
+- **Silent dispatch**: Coordinator bar sends prompts without switching windows
+- Pure stdlib HTTP server, zero dependencies, HTML/CSS/JS embedded in one Python file
 
 ## Development Rules
 
@@ -87,6 +115,8 @@ The best test is `ccctl ps`, `ccctl summary -v`, `ccctl resume <name>` in a real
 | History | `~/.claude/history.jsonl` | All user messages with sessionId, timestamp, project | Persistent |
 | Process table | `pgrep claude` / `kill -0` | Process liveness, memory, CPU | Real-time |
 | ccctl names | `~/.claude/ccctl/names.json` | session_id → name mapping | Persistent (ours) |
+| ccctl config | `~/.claude/ccctl/config.json` | coordinator session_id | Persistent (ours) |
+| Status files | `~/.claude/ccctl/status/{pid}` | "idle" or "working" (written by hooks) | Ephemeral |
 
 ## Activity Level Definitions
 
