@@ -5,10 +5,11 @@ from __future__ import annotations
 import os
 import sys
 
-from ccctl.output import format_ago, shorten_path
-from ccctl.sources import check_alive, read_last_messages, read_sessions
-from ccctl.store import load_names, save_names, set_name
 import time
+
+from ccctl.output import format_ago, shorten_path
+from ccctl.sources import check_alive, lookup_session_project, read_last_messages, read_sessions, resolve_session_id
+from ccctl.store import load_names, save_names, set_name
 
 
 def _derive_project(cwd: str) -> str:
@@ -29,26 +30,56 @@ def run(args):
         _list_names(args)
 
 
-def _set_name(args):
+def _find_target(args) -> tuple[str, str]:
+    """Find session by PID, name, or session_id prefix. Returns (sid, label)."""
+    query = args.pid
     sessions = read_sessions(args.claude_dir)
-    target = None
+    ccctl_names = load_names(args.claude_dir)
+
+    # Live: by PID
     for s in sessions:
-        if str(s.get("pid")) == str(args.pid):
-            target = s
-            break
-    if not target:
-        print(f"No session with PID {args.pid}", file=sys.stderr)
+        if str(s.get("pid")) == query:
+            return s["sessionId"], f"PID {query}"
+    # Live: by ccctl name
+    for s in sessions:
+        sid = s.get("sessionId", "")
+        if ccctl_names.get(sid) == query:
+            return sid, query
+    # Live: by native name
+    for s in sessions:
+        if s.get("name") == query:
+            return s["sessionId"], query
+    # Live: by session_id prefix
+    for s in sessions:
+        if s.get("sessionId", "").startswith(query):
+            return s["sessionId"], query[:12]
+    # History: by session_id (full or prefix) — resolve from history.jsonl
+    full_sid = resolve_session_id(args.claude_dir, query)
+    if full_sid:
+        return full_sid, query[:12]
+    # Name store: by existing ccctl name
+    name_to_sid = {v: k for k, v in ccctl_names.items()}
+    if query in name_to_sid:
+        return name_to_sid[query], query
+
+    return "", ""
+
+
+def _set_name(args):
+    sid, label = _find_target(args)
+    if not sid:
+        print(f"No session found: {args.pid}", file=sys.stderr)
         sys.exit(1)
 
-    sid = target["sessionId"]
     if not args.name_value:
-        # Suggest
-        suggestion = _derive_project(target.get("cwd", ""))
+        # Try to suggest from cwd
+        cwd = lookup_session_project(args.claude_dir, sid)
+        suggestion = _derive_project(cwd) if cwd else sid[:12]
         print(f"Suggestion: ccctl name {args.pid} {suggestion}")
         return
 
     set_name(args.claude_dir, sid, args.name_value)
-    print(f"Named PID {args.pid} → {args.name_value}")
+    print(f"Named {label} → {args.name_value}")
 
 
 def _auto_name(args):

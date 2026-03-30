@@ -107,8 +107,8 @@ def read_session_messages(claude_dir: Path, session_id: str) -> list[dict]:
 def lookup_session_project(claude_dir: Path, session_id: str) -> str | None:
     """Find the project directory (cwd) for a session from history.jsonl.
 
-    Reads from the tail for efficiency — the most recent entry has the
-    project path, which is the cwd the session was running in.
+    Supports exact match and prefix match on session_id.
+    Reads from the tail for efficiency.
     """
     history = claude_dir / "history.jsonl"
     if not history.exists():
@@ -134,7 +134,41 @@ def lookup_session_project(claude_dir: Path, session_id: str) -> str | None:
             entry = json.loads(line)
         except (json.JSONDecodeError, UnicodeDecodeError):
             continue
-        if entry.get("sessionId") == session_id:
+        sid = entry.get("sessionId", "")
+        if sid == session_id or sid.startswith(session_id):
             return entry.get("project")
+
+    return None
+
+
+def resolve_session_id(claude_dir: Path, prefix: str) -> str | None:
+    """Resolve a session_id prefix to a full session_id from history.jsonl."""
+    history = claude_dir / "history.jsonl"
+    if not history.exists():
+        return None
+
+    file_size = history.stat().st_size
+    if file_size == 0:
+        return None
+
+    read_size = min(file_size, 4 * 1024 * 1024)
+
+    with open(history, "rb") as f:
+        f.seek(file_size - read_size)
+        if file_size > read_size:
+            f.readline()
+        raw = f.read()
+
+    for line in reversed(raw.split(b"\n")):
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            entry = json.loads(line)
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            continue
+        sid = entry.get("sessionId", "")
+        if sid.startswith(prefix):
+            return sid
 
     return None

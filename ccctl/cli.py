@@ -40,7 +40,7 @@ def main():
 
     # --- manage ---
     name_p = sub.add_parser("name", help="List or set session names")
-    name_p.add_argument("pid", nargs="?", help="PID to name")
+    name_p.add_argument("pid", nargs="?", metavar="target", help="PID, session ID, or existing name")
     name_p.add_argument("name_value", nargs="?", metavar="name", help="Name to assign")
     name_p.add_argument("--auto", action="store_true", help="Auto-name all unnamed alive sessions")
 
