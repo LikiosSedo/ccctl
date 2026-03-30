@@ -453,6 +453,26 @@ def _do_send(target: str, prompt: str, as_coordinator: bool = False) -> dict:
         return {"ok": False, "error": "AppleScript failed"}
 
 
+def _do_rename(session_id: str, new_name: str) -> dict:
+    """Rename a session (ccctl store + /rename injection)."""
+    from ccctl.store import set_name
+    from ccctl.cmd_name import _inject_rename
+
+    sessions = read_sessions(_claude_dir)
+    set_name(_claude_dir, session_id, new_name)
+
+    # Try to sync via /rename injection
+    synced = False
+    for s in sessions:
+        if s.get("sessionId") == session_id:
+            pid = s.get("pid")
+            if pid and check_alive(pid):
+                synced = _inject_rename(pid, new_name)
+            break
+
+    return {"ok": True, "name": new_name, "synced": synced}
+
+
 def _do_stop(target: str) -> dict:
     """Stop a session by SIGTERM."""
     sessions = read_sessions(_claude_dir)
@@ -541,6 +561,13 @@ class Handler(BaseHTTPRequestHandler):
         elif parsed.path == "/api/resume":
             sid = body.get("session_id", "")
             self._json_response(_do_resume(sid))
+        elif parsed.path == "/api/rename":
+            sid = body.get("session_id", "")
+            new_name = body.get("name", "")
+            if not sid or not new_name:
+                self._json_response({"ok": False, "error": "Missing session_id or name"})
+            else:
+                self._json_response(_do_rename(sid, new_name))
         elif parsed.path == "/api/pin":
             sid = body.get("session_id", "")
             config = load_config(_claude_dir)
@@ -687,6 +714,18 @@ HTML = '''<!DOCTYPE html>
     padding: 6px 8px;
     background: #1a1a2e;
     border-radius: 4px;
+  }
+  .rename-input {
+    background: #1a1a2e;
+    border: 1px solid #8be9fd;
+    border-radius: 4px;
+    color: #f8f8f2;
+    padding: 2px 6px;
+    font-size: 14px;
+    font-family: inherit;
+    font-weight: 600;
+    outline: none;
+    width: 180px;
   }
   .card .preview {
     font-size: 11px;
@@ -1008,7 +1047,7 @@ function renderCard(s, i) {
   return `
     <div class="card ${s.status}${coordClass}" onclick="doFocus('${esc(s.name)}', event)">
       <div class="top">
-        <span class="name">${readyDot} ${esc(s.name)}</span>
+        <span class="name" ondblclick="event.stopPropagation();startRename('${s.session_id}','${esc(s.name)}',this)">${readyDot} ${esc(s.name)}</span>
         <span class="badge ${s.status}">${s.status} \\u00b7 ${esc(s.last_active_ago)}</span>
       </div>
       <div class="meta">${esc(s.project)} \\u00b7 PID ${s.pid}</div>
@@ -1210,6 +1249,34 @@ async function sendToCoordinator() {
   } else {
     toast(res.error || "Failed", false);
   }
+}
+
+function startRename(sid, oldName, el) {
+  const input = document.createElement("input");
+  input.className = "rename-input";
+  input.value = oldName;
+  el.innerHTML = "";
+  el.appendChild(input);
+  input.focus();
+  input.select();
+  const finish = async () => {
+    const newName = input.value.trim();
+    if (newName && newName !== oldName) {
+      const r = await fetch("/api/rename", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({session_id: sid, name: newName}),
+      });
+      const res = await r.json();
+      toast(res.ok ? "Renamed \\u2192 " + newName + (res.synced ? " (synced)" : "") : (res.error || "Failed"), res.ok);
+    }
+    refresh();
+  };
+  input.addEventListener("blur", finish);
+  input.addEventListener("keydown", e => {
+    if (e.key === "Enter") input.blur();
+    if (e.key === "Escape") { input.value = oldName; input.blur(); }
+  });
 }
 
 async function doResume(sid, name) {
