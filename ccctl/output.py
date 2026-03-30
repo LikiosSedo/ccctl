@@ -3,10 +3,28 @@
 from __future__ import annotations
 
 import os
+import re
+
+_MARKER_RE = re.compile(r"\[(?:Pasted text|Image) #\d+[^\]]*\]")
+
 
 def applescript_str(s: str) -> str:
     """Escape a string for safe embedding in AppleScript double-quoted strings."""
     return s.replace("\\", "\\\\").replace('"', '\\"').replace("\n", " ")
+
+
+def clean_display(text: str) -> str:
+    """Remove [Pasted text ...] and [Image ...] markers, normalize whitespace."""
+    return _MARKER_RE.sub("", text).replace("\n", " ").strip()
+
+
+def derive_project(cwd: str) -> str:
+    """Derive a short project identifier from cwd."""
+    wt = "/.claude/worktrees/"
+    if wt in cwd:
+        base, name = cwd.split(wt, 1)
+        return f"{os.path.basename(base)}/{name.rstrip('/')}"
+    return os.path.basename(cwd) or "~"
 
 
 _STATUS_ICON = {

@@ -6,8 +6,23 @@ build-backend = "hatchling.build"
 name = "ccctl"
 version = "0.1.0"
 description = "Claude Code session & task control plane"
+readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
+keywords = ["claude", "claude-code", "session-manager", "cli"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: MacOS",
+    "Programming Language :: Python :: 3",
+    "Topic :: Software Development :: Libraries :: Application Frameworks",
+]
+
+[project.urls]
+Homepage = "https://github.com/LikiosSedo/ccctl"
+Repository = "https://github.com/LikiosSedo/ccctl"
 
 [project.scripts]
 ccctl = "ccctl.cli:main"

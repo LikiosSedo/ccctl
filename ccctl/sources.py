@@ -141,6 +141,44 @@ def lookup_session_project(claude_dir: Path, session_id: str) -> str | None:
     return None
 
 
+def find_session(
+    sessions: list[dict],
+    ccctl_names: dict[str, str],
+    query: str,
+    include_name_store: bool = False,
+) -> dict | None:
+    """Find a session by PID, ccctl name, native name, or session_id prefix.
+
+    Searches in order: PID → ccctl name → native name → session_id prefix.
+    If include_name_store is True, also checks the name store for sessions
+    whose session files are gone (for resume of stopped sessions).
+    """
+    # By PID
+    for s in sessions:
+        if str(s.get("pid")) == query:
+            return s
+    # By ccctl name
+    for s in sessions:
+        sid = s.get("sessionId", "")
+        if ccctl_names.get(sid) == query:
+            return s
+    # By native name
+    for s in sessions:
+        if s.get("name") == query:
+            return s
+    # By session_id prefix
+    for s in sessions:
+        if s.get("sessionId", "").startswith(query):
+            return s
+    # Name store fallback for dead sessions
+    if include_name_store:
+        name_to_sid = {v: k for k, v in ccctl_names.items()}
+        if query in name_to_sid:
+            sid = name_to_sid[query]
+            return {"sessionId": sid, "name": query, "_needs_cwd_lookup": True}
+    return None
+
+
 def resolve_session_id(claude_dir: Path, prefix: str) -> str | None:
     """Resolve a session_id prefix to a full session_id from history.jsonl."""
     history = claude_dir / "history.jsonl"

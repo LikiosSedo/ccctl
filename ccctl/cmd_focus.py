@@ -7,26 +7,8 @@ import subprocess
 import sys
 
 from ccctl.output import applescript_str
-from ccctl.sources import check_alive, read_sessions
+from ccctl.sources import check_alive, find_session, read_sessions
 from ccctl.store import load_names
-
-
-def _find_live_session(sessions: list[dict], ccctl_names: dict[str, str], query: str) -> dict | None:
-    """Find a live session by PID, name, or session_id prefix."""
-    for s in sessions:
-        if str(s.get("pid")) == query:
-            return s
-    for s in sessions:
-        sid = s.get("sessionId", "")
-        if ccctl_names.get(sid) == query:
-            return s
-    for s in sessions:
-        if s.get("name") == query:
-            return s
-    for s in sessions:
-        if s.get("sessionId", "").startswith(query):
-            return s
-    return None
 
 
 def _get_tty(pid: int) -> str | None:
@@ -119,7 +101,7 @@ def _send_prompt_iterm(tty: str, prompt: str) -> bool:
 def run(args):
     sessions = read_sessions(args.claude_dir)
     ccctl_names = load_names(args.claude_dir)
-    target = _find_live_session(sessions, ccctl_names, args.target)
+    target = find_session(sessions, ccctl_names, args.target)
 
     if not target:
         print(f"No live session found: {args.target}", file=sys.stderr)

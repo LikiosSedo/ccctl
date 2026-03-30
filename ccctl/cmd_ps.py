@@ -4,11 +4,10 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import sys
 import time
 
-from ccctl.output import print_group_table, print_session_table
+from ccctl.output import clean_display, derive_project, print_group_table, print_session_table
 from ccctl.sources import check_alive, read_last_messages, read_sessions
 from ccctl.store import load_names
 
@@ -30,21 +29,7 @@ def classify(alive: bool, last_active: float | None) -> str:
     return "stale"
 
 
-_PASTED_RE = re.compile(r"\[Pasted text #\d+[^\]]*\]")
-
-
-def _clean_display(text: str) -> str:
-    """Remove [Pasted text ...] markers and normalize whitespace."""
-    return _PASTED_RE.sub("", text).replace("\n", " ").strip()
-
-
-def derive_project(cwd: str) -> str:
-    """Derive a short project identifier from cwd."""
-    wt = "/.claude/worktrees/"
-    if wt in cwd:
-        base, name = cwd.split(wt, 1)
-        return f"{os.path.basename(base)}/{name.rstrip('/')}"
-    return os.path.basename(cwd) or "~"
+_clean_display = clean_display  # back-compat alias
 
 
 def run(args):

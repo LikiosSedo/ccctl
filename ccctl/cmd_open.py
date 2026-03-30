@@ -7,7 +7,7 @@ import shlex
 import subprocess
 import sys
 
-from ccctl.sources import check_alive, lookup_session_project, read_sessions
+from ccctl.sources import check_alive, find_session, lookup_session_project, read_sessions
 from ccctl.store import load_names
 
 
@@ -64,41 +64,10 @@ def _open_in_new_window(cmd: str, cwd: str, title: str = ""):
     return where
 
 
-def _find_session(sessions: list[dict], ccctl_names: dict[str, str], query: str) -> dict | None:
-    """Find session by PID, name, or session ID prefix.
-
-    Searches live sessions first, then falls back to ccctl name store
-    (for sessions that were stopped and whose files Claude Code cleaned up).
-    """
-    # Live: by PID
-    for s in sessions:
-        if str(s.get("pid")) == query:
-            return s
-    # Live: by ccctl name
-    for s in sessions:
-        sid = s.get("sessionId", "")
-        if ccctl_names.get(sid) == query:
-            return s
-    # Live: by native name
-    for s in sessions:
-        if s.get("name") == query:
-            return s
-    # Live: by session ID prefix
-    for s in sessions:
-        if s.get("sessionId", "").startswith(query):
-            return s
-    # Name store fallback — session file gone, but we can recover cwd from history
-    name_to_sid = {v: k for k, v in ccctl_names.items()}
-    if query in name_to_sid:
-        sid = name_to_sid[query]
-        return {"sessionId": sid, "name": query, "_needs_cwd_lookup": True}
-    return None
-
-
 def run_resume(args):
     sessions = read_sessions(args.claude_dir)
     ccctl_names = load_names(args.claude_dir)
-    target = _find_session(sessions, ccctl_names, args.target)
+    target = find_session(sessions, ccctl_names, args.target, include_name_store=True)
 
     if not target:
         print(f"No session found: {args.target}", file=sys.stderr)

@@ -14,7 +14,8 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from ccctl.cmd_ps import classify, derive_project, _clean_display
+from ccctl.cmd_ps import classify
+from ccctl.output import clean_display, derive_project
 from ccctl.output import applescript_str
 from ccctl.sources import check_alive, read_last_messages, read_sessions, lookup_session_project
 from ccctl.store import load_names, load_config, save_config
@@ -70,7 +71,7 @@ def _build_rows() -> list[dict]:
             last_active = s.get("_mtime")
 
         status = classify(alive, last_active)
-        last_input = _clean_display(msg["display"]) if (msg and msg.get("display")) else ""
+        last_input = clean_display(msg["display"]) if (msg and msg.get("display")) else ""
         name = ccctl_names.get(sid) or s.get("name") or sid[:8]
 
         rows.append({
@@ -162,8 +163,8 @@ def _build_history(query: str = "") -> list[dict]:
 
         name = ccctl_names.get(sid) or sid[:8]
         project = os.path.basename(d["project"]) if d["project"] else ""
-        first_input = _clean_display(d["first_input"]) if d.get("first_input") else ""
-        last_input = _clean_display(d["last_input"]) if d.get("last_input") else ""
+        first_input = clean_display(d["first_input"]) if d.get("first_input") else ""
+        last_input = clean_display(d["last_input"]) if d.get("last_input") else ""
 
         # Search filter
         if query_lower:
@@ -188,17 +189,11 @@ def _build_history(query: str = "") -> list[dict]:
     return rows[:50]  # cap at 50
 
 
+from ccctl.output import format_ago as _format_ago
+
+
 def _ago(ts: float | None, now: float) -> str:
-    if ts is None:
-        return "-"
-    d = now - ts
-    if d < 60:
-        return f"{int(d)}s"
-    if d < 3600:
-        return f"{int(d / 60)}m"
-    if d < 86400:
-        return f"{int(d / 3600)}h"
-    return f"{int(d / 86400)}d"
+    return _format_ago(ts, now)
 
 
 def _do_focus(target: str, prompt: str | None) -> dict:

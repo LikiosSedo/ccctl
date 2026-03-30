@@ -16,25 +16,8 @@ import time
 
 from ccctl.cmd_ps import classify
 from ccctl.output import format_ago
-from ccctl.sources import check_alive, read_last_messages, read_sessions
+from ccctl.sources import check_alive, find_session, read_last_messages, read_sessions
 from ccctl.store import load_names
-
-
-def _find_session(sessions: list[dict], ccctl_names: dict[str, str], query: str) -> dict | None:
-    for s in sessions:
-        if str(s.get("pid")) == query:
-            return s
-    for s in sessions:
-        sid = s.get("sessionId", "")
-        if ccctl_names.get(sid) == query:
-            return s
-    for s in sessions:
-        if s.get("name") == query:
-            return s
-    for s in sessions:
-        if s.get("sessionId", "").startswith(query):
-            return s
-    return None
 
 
 def _sigterm(pid: int) -> bool:
@@ -61,7 +44,7 @@ def run_stop(args):
 
     stopped = 0
     for target in args.targets:
-        s = _find_session(sessions, ccctl_names, target)
+        s = find_session(sessions, ccctl_names, target)
         if not s:
             print(f"  ? No session found: {target}", file=sys.stderr)
             continue

@@ -62,7 +62,7 @@ def _derive_project(path: str, scope: str) -> str:
 
 
 def run(args):
-    scope = args.scope or os.path.expanduser("~/project")
+    scope = args.scope or os.path.expanduser("~")
     scope = scope.rstrip("/")
     history = args.claude_dir / "history.jsonl"
 

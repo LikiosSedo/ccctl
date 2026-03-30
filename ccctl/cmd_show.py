@@ -9,24 +9,14 @@ import sys
 import time
 
 from ccctl.output import format_ago
-from ccctl.sources import check_alive, read_session_messages, read_sessions
-from ccctl.store import get_name
-
-
-def _find_session(sessions: list[dict], query: str) -> dict | None:
-    """Find session by PID or session_id prefix."""
-    for s in sessions:
-        if str(s.get("pid")) == query:
-            return s
-    for s in sessions:
-        if s.get("sessionId", "").startswith(query):
-            return s
-    return None
+from ccctl.sources import check_alive, find_session, read_session_messages, read_sessions
+from ccctl.store import get_name, load_names
 
 
 def run(args):
     sessions = read_sessions(args.claude_dir)
-    target = _find_session(sessions, args.id)
+    ccctl_names = load_names(args.claude_dir)
+    target = find_session(sessions, ccctl_names, args.id)
 
     if not target:
         print(f"No session found matching: {args.id}", file=sys.stderr)
