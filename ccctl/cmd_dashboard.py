@@ -531,14 +531,7 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 config["coordinator"] = sid
                 save_config(_claude_dir, config)
-                # Auto-init: send current topology to new coordinator
-                rows = _build_rows()
-                target_name = None
-                for r in rows:
-                    if r["session_id"] == sid:
-                        target_name = r["name"]
-                        break
-                # Auto-send init prompt to new coordinator (silent, no window switch)
+                # Find target name, send init, then focus
                 target_name = None
                 for r in _build_rows():
                     if r["session_id"] == sid:
@@ -546,6 +539,7 @@ class Handler(BaseHTTPRequestHandler):
                         break
                 if target_name:
                     _do_send(target_name, _COORDINATOR_INIT, as_coordinator=False)
+                    _do_focus(target_name, prompt=None)
                 self._json_response({"ok": True, "pinned": True})
         else:
             self.send_error(404)
