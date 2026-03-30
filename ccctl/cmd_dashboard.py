@@ -645,6 +645,16 @@ HTML = '''<!DOCTYPE html>
     background: #1a1a2e;
     border-radius: 4px;
   }
+  .rename-btn {
+    font-size: 11px;
+    color: #555;
+    cursor: pointer;
+    margin-left: 4px;
+    opacity: 0;
+    transition: opacity 0.15s;
+  }
+  .card:hover .rename-btn { opacity: 1; }
+  .rename-btn:hover { color: #8be9fd; }
   .rename-input {
     background: #1a1a2e;
     border: 1px solid #8be9fd;
@@ -977,7 +987,7 @@ function renderCard(s, i) {
   return `
     <div class="card ${s.status}${coordClass}" onclick="doFocus('${esc(s.name)}', event)">
       <div class="top">
-        <span class="name" ondblclick="event.stopPropagation();startRename('${s.session_id}','${esc(s.name)}',this)">${readyDot} ${esc(s.name)}</span>
+        <span class="name">${readyDot} ${esc(s.name)} <span class="rename-btn" onclick="event.stopPropagation();startRename('${s.session_id}','${esc(s.name)}',this.parentElement)" title="Rename">&#9998;</span></span>
         <span class="badge ${s.status}">${s.status} \\u00b7 ${esc(s.last_active_ago)}</span>
       </div>
       <div class="meta">${esc(s.project)} \\u00b7 PID ${s.pid}</div>
