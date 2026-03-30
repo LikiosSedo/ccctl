@@ -516,17 +516,33 @@ class Handler(BaseHTTPRequestHandler):
                         target_name = r["name"]
                         break
                 if target_name:
-                    topo = "\n".join(
-                        f"  {r['name']:<25} {r['project']:<20} {r['status']:<7} {r['last_input'][:40]}"
-                        for r in rows
-                    )
+                    # Group sessions by project
+                    projects: dict[str, list] = {}
+                    for r in rows:
+                        projects.setdefault(r["project"], []).append(r)
+                    topo_parts = []
+                    for proj, members in sorted(projects.items()):
+                        sessions_str = ", ".join(
+                            f"{r['name']}({r['status']})" for r in members
+                        )
+                        topo_parts.append(f"  [{proj}] {sessions_str}")
+                    topo = "\n".join(topo_parts)
+                    total = len(rows)
+                    active = sum(1 for r in rows if r["status"] == "active")
+
                     init_prompt = (
-                        "[ccctl coordinator init] You are now the coordinator session for ccctl. "
-                        "Your job: manage and dispatch other Claude Code sessions via ccctl CLI.\n\n"
-                        "Current live sessions:\n" + topo + "\n\n"
-                        "Available commands: ccctl ps, ccctl new, ccctl resume, ccctl focus, "
-                        "ccctl stop, ccctl name, ccctl summary, ccctl dashboard.\n"
-                        "When you receive [ccctl dispatch] messages, execute the instruction using these commands."
+                        "[ccctl coordinator init]\n"
+                        f"You are now the coordinator. {total} live sessions, {active} active.\n\n"
+                        "## Session Topology\n" + topo + "\n\n"
+                        "## Commands\n"
+                        "- `ccctl ps --json` — list all sessions\n"
+                        "- `ccctl new --name <n> --cwd <dir> \"prompt\"` — start new session\n"
+                        "- `ccctl resume <name>` — resume stopped session\n"
+                        "- `ccctl focus <name> \"prompt\"` — switch to session + send prompt\n"
+                        "- `ccctl stop <name>` — stop session (preserves data)\n"
+                        "- `ccctl name <target> <name>` — rename session\n"
+                        "- `ccctl summary -v` — full project overview\n\n"
+                        "When you receive `[ccctl dispatch]` messages, execute the user's instruction."
                     )
                     _do_send(target_name, init_prompt, as_coordinator=False)
                 self._json_response({"ok": True, "pinned": True})
@@ -990,8 +1006,9 @@ function restoreInputs(saved) {
 }
 
 function render() {
-  // Skip render if user is editing a rename input
-  if (document.querySelector(".rename-input")) return;
+  // Skip render if user is typing in a card input (not dispatch bar)
+  const active = document.activeElement;
+  if (active && active.tagName === "INPUT" && active.id !== "dispatch-input") return;
   const saved = saveInputs();
   if (currentTab === "live") renderLive();
   else renderHistory();
