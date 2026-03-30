@@ -650,6 +650,37 @@ HTML = '''<!DOCTYPE html>
   }
   .confirm-box p { margin-bottom: 16px; font-size: 14px; }
   .confirm-box .btns { display: flex; gap: 12px; justify-content: center; }
+  .group-header {
+    font-size: 13px;
+    font-weight: 600;
+    color: #8be9fd;
+    padding: 8px 0 6px 2px;
+    margin-top: 12px;
+    border-bottom: 1px solid #333;
+    margin-bottom: 10px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .group-header:first-child { margin-top: 0; }
+  .group-header .count { font-weight: 400; color: #666; font-size: 12px; }
+  .view-toggle {
+    display: flex;
+    gap: 0;
+    margin-left: 12px;
+  }
+  .view-toggle button {
+    padding: 4px 10px;
+    font-size: 11px;
+    cursor: pointer;
+    border: 1px solid #444;
+    background: transparent;
+    color: #666;
+    font-family: inherit;
+  }
+  .view-toggle button:first-child { border-radius: 4px 0 0 4px; }
+  .view-toggle button:last-child { border-radius: 0 4px 4px 0; }
+  .view-toggle button.active { background: #8be9fd22; color: #8be9fd; border-color: #8be9fd44; }
 </style>
 </head>
 <body>
@@ -660,16 +691,23 @@ HTML = '''<!DOCTYPE html>
   </div>
 </header>
 
-<div class="tabs">
-  <button class="tab active" onclick="switchTab('live')">Live Sessions</button>
-  <button class="tab" onclick="switchTab('history')">History</button>
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+  <div class="tabs">
+    <button class="tab active" onclick="switchTab('live')">Live Sessions</button>
+    <button class="tab" onclick="switchTab('history')">History</button>
+  </div>
+  <div class="view-toggle" id="view-toggle">
+    <button class="active" onclick="setView('flat')">Flat</button>
+    <button onclick="setView('group')">By Project</button>
+    <button onclick="setView('status')">By Status</button>
+  </div>
 </div>
 
 <div id="dispatch-bar" class="dispatch-bar">
   <div class="label" id="dispatch-label"></div>
   <div class="row">
     <input id="dispatch-input" placeholder="Send instruction to coordinator..."
-      onkeydown="if(event.key==='Enter')sendToCoordinator()">
+      onkeydown="if(event.key==='Enter'&&!event.isComposing)sendToCoordinator()">
     <button onclick="sendToCoordinator()">Dispatch</button>
   </div>
 </div>
@@ -686,6 +724,7 @@ HTML = '''<!DOCTYPE html>
 let sessions = [];
 let history = [];
 let currentTab = "live";
+let viewMode = "flat";
 let searchTimer = null;
 
 async function refresh() {
@@ -716,13 +755,43 @@ function switchTab(tab) {
     el.classList.toggle("active", (i === 0 && tab === "live") || (i === 1 && tab === "history"));
   });
   document.getElementById("search-row").style.display = tab === "history" ? "flex" : "none";
+  document.getElementById("view-toggle").style.display = tab === "live" ? "flex" : "none";
   if (tab === "history" && !history.length) searchHistory();
+  render();
+}
+
+function setView(mode) {
+  viewMode = mode;
+  document.querySelectorAll(".view-toggle button").forEach((el, i) => {
+    el.classList.toggle("active", (i === 0 && mode === "flat") || (i === 1 && mode === "group") || (i === 2 && mode === "status"));
+  });
   render();
 }
 
 function render() {
   if (currentTab === "live") renderLive();
   else renderHistory();
+}
+
+function renderCard(s, i) {
+  const coordClass = s.is_coordinator ? " coordinator" : "";
+  const pinLabel = s.is_coordinator ? "Unpin" : "Pin";
+  const pinClass = s.is_coordinator ? " active" : "";
+  return `
+    <div class="card ${s.status}${coordClass}" onclick="doFocus('${esc(s.name)}', event)">
+      <div class="top">
+        <span class="name">${esc(s.name)}</span>
+        <span class="badge ${s.status}">${s.status} \\u00b7 ${esc(s.last_active_ago)}</span>
+      </div>
+      <div class="meta">${esc(s.project)} \\u00b7 PID ${s.pid}</div>
+      <div class="last-input">${esc(s.last_input || "-")}</div>
+      <div class="actions" onclick="event.stopPropagation()">
+        <input id="p${i}" placeholder="send prompt..." onkeydown="if(event.key==='Enter'&&!event.isComposing)sendPrompt('${esc(s.name)}',${i})">
+        <button class="btn" onclick="sendPrompt('${esc(s.name)}',${i})">Send</button>
+        <button class="btn pin${pinClass}" onclick="togglePin('${s.session_id}')">${pinLabel}</button>
+        <button class="btn danger" onclick="confirmStop('${esc(s.name)}',${s.pid})">Stop</button>
+      </div>
+    </div>`;
 }
 
 function renderLive() {
@@ -760,26 +829,30 @@ function renderLive() {
     return (b.last_active || 0) - (a.last_active || 0);
   });
 
-  el.innerHTML = sorted.map((s, i) => {
-    const coordClass = s.is_coordinator ? " coordinator" : "";
-    const pinLabel = s.is_coordinator ? "Unpin" : "Pin";
-    const pinClass = s.is_coordinator ? " active" : "";
-    return `
-    <div class="card ${s.status}${coordClass}" onclick="doFocus('${esc(s.name)}', event)">
-      <div class="top">
-        <span class="name">${esc(s.name)}</span>
-        <span class="badge ${s.status}">${s.status} \\u00b7 ${esc(s.last_active_ago)}</span>
-      </div>
-      <div class="meta">${esc(s.project)} \\u00b7 PID ${s.pid}</div>
-      <div class="last-input">${esc(s.last_input || "-")}</div>
-      <div class="actions" onclick="event.stopPropagation()">
-        <input id="p${i}" placeholder="send prompt..." onkeydown="if(event.key==='Enter')sendPrompt('${esc(s.name)}',${i})">
-        <button class="btn" onclick="sendPrompt('${esc(s.name)}',${i})">Send</button>
-        <button class="btn pin${pinClass}" onclick="togglePin('${s.session_id}')">${pinLabel}</button>
-        <button class="btn danger" onclick="confirmStop('${esc(s.name)}',${s.pid})">Stop</button>
-      </div>
-    </div>`;
-  }).join("");
+  if (viewMode === "flat") {
+    el.className = "cards";
+    el.innerHTML = sorted.map((s, i) => renderCard(s, i)).join("");
+  } else {
+    el.className = "";
+    const key = viewMode === "group" ? "project" : "status";
+    const groups = {};
+    sorted.forEach((s, i) => {
+      const k = s[key] || "other";
+      if (!groups[k]) groups[k] = [];
+      groups[k].push({s, i});
+    });
+    const sortedGroups = Object.entries(groups).sort((a, b) => {
+      const aMax = Math.max(...a[1].map(x => x.s.last_active || 0));
+      const bMax = Math.max(...b[1].map(x => x.s.last_active || 0));
+      return bMax - aMax;
+    });
+    let html = "";
+    for (const [groupName, items] of sortedGroups) {
+      html += '<div class="group-header"><span>' + esc(groupName) + '</span><span class="count">' + items.length + '</span></div>';
+      html += '<div class="cards">' + items.map(({s, i}) => renderCard(s, i)).join("") + '</div>';
+    }
+    el.innerHTML = html;
+  }
 }
 
 function renderHistory() {
@@ -828,6 +901,7 @@ async function doFocus(name, event) {
     body: JSON.stringify({target: name}),
   });
   const res = await r.json();
+  if (res.ok) window.blur();
   toast(res.ok ? "Focused \\u2192 " + name : (res.error || "Failed"), res.ok);
 }
 
