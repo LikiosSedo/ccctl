@@ -280,7 +280,7 @@ def _do_focus(target: str, prompt: str | None) -> dict:
             result["prompt_error"] = "Failed to check foreground"
             return result
 
-        escaped = prompt.replace("\\", "\\\\").replace('"', '\\"')
+        escaped = prompt.replace("\n", " ").replace("\\", "\\\\").replace('"', '\\"')
         send_script = f'''
             tell application "iTerm2"
                 repeat with w in windows
@@ -378,7 +378,8 @@ def _do_send(target: str, prompt: str, as_coordinator: bool = False) -> dict:
         return {"ok": False, "error": "Failed to check process"}
 
     # Silent inject — no activate, no tab switch
-    escaped = prompt.replace("\\", "\\\\").replace('"', '\\"')
+    # Replace newlines with spaces to prevent premature submission
+    escaped = prompt.replace("\n", " ").replace("\\", "\\\\").replace('"', '\\"')
     script = f'''
         tell application "iTerm2"
             repeat with w in windows
