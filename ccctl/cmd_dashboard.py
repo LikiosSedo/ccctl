@@ -22,74 +22,23 @@ _claude_dir: Path = Path.home() / ".claude"
 
 
 def _read_terminal_states(pids: list[int]) -> dict[int, dict]:
-    """Read session ready/busy state via iTerm2 tab titles (set by hooks).
+    """Read session ready/busy state from status files written by hooks.
 
-    Claude Code hooks set tab title to '✅ idle' (Stop) or '⏳ working'
-    (UserPromptSubmit). We read tab titles — much faster than reading
-    terminal contents.
+    Claude Code hooks write 'idle' or 'working' to
+    ~/.claude/ccctl/status/<pid>. Zero AppleScript overhead.
 
     Returns {pid: {"ready": bool}}.
     """
-    if not pids:
-        return {}
-
-    # Build TTY -> PID mapping
-    tty_to_pid = {}
-    for pid in pids:
-        try:
-            r = subprocess.run(
-                ["ps", "-o", "tty=", "-p", str(pid)],
-                capture_output=True, text=True, timeout=5,
-            )
-            tty = r.stdout.strip()
-            if tty and tty != "??":
-                tty_to_pid[f"/dev/{tty}"] = pid
-        except (subprocess.TimeoutExpired, OSError):
-            continue
-
-    if not tty_to_pid:
-        return {}
-
-    # Single AppleScript: read tab titles for all matching TTYs
-    script = '''
-        set output to ""
-        tell application "iTerm2"
-            repeat with w in windows
-                repeat with t in tabs of w
-                    repeat with s in sessions of t
-                        set ttyPath to tty of s
-                        set tabName to name of t
-                        set output to output & ttyPath & "\t" & tabName & "\n"
-                    end repeat
-                end repeat
-            end repeat
-        end tell
-        return output
-    '''
-    try:
-        r = subprocess.run(
-            ["osascript", "-e", script],
-            capture_output=True, text=True, timeout=5,
-        )
-        raw = r.stdout
-    except (subprocess.TimeoutExpired, OSError):
-        return {}
-
+    status_dir = _claude_dir / "ccctl" / "status"
     result = {}
-    for line in raw.strip().split("\n"):
-        if "\t" not in line:
-            continue
-        tty_path, tab_title = line.split("\t", 1)
-        tty_path = tty_path.strip()
-        pid = tty_to_pid.get(tty_path)
-        if pid is None:
-            continue
-
-        # Hook sets: "✅ idle" or "⏳ working"
-        # No hook yet (new session) → unknown, treat as busy
-        ready = "✅" in tab_title or "idle" in tab_title.lower()
-        result[pid] = {"ready": ready}
-
+    for pid in pids:
+        f = status_dir / str(pid)
+        if f.exists():
+            try:
+                state = f.read_text().strip()
+                result[pid] = {"ready": state == "idle"}
+            except OSError:
+                pass
     return result
 
 
