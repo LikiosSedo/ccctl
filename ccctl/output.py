@@ -4,6 +4,11 @@ from __future__ import annotations
 
 import os
 
+def applescript_str(s: str) -> str:
+    """Escape a string for safe embedding in AppleScript double-quoted strings."""
+    return s.replace("\\", "\\\\").replace('"', '\\"').replace("\n", " ")
+
+
 _STATUS_ICON = {
     "active": "●",
     "idle": "○",

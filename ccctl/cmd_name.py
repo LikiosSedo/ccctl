@@ -41,13 +41,16 @@ def _inject_rename(pid: int, new_name: str) -> bool:
     except (subprocess.TimeoutExpired, OSError):
         return False
 
+    from ccctl.output import applescript_str
+    safe_tty = applescript_str(tty_path)
+    safe_name = applescript_str(new_name)
     script = f'''
         tell application "iTerm2"
             repeat with w in windows
                 repeat with t in tabs of w
                     repeat with s in sessions of t
-                        if tty of s is "{tty_path}" then
-                            tell s to write text "/rename {new_name}"
+                        if tty of s is "{safe_tty}" then
+                            tell s to write text "/rename {safe_name}"
                             return "ok"
                         end if
                     end repeat

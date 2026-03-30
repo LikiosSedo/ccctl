@@ -15,6 +15,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from ccctl.cmd_ps import classify, derive_project, _clean_display
+from ccctl.output import applescript_str
 from ccctl.sources import check_alive, read_last_messages, read_sessions, lookup_session_project
 from ccctl.store import load_names, load_config, save_config
 
@@ -228,7 +229,7 @@ def _do_focus(target: str, prompt: str | None) -> dict:
         tty = r.stdout.strip()
         if not tty or tty == "??":
             return {"ok": False, "error": f"No TTY for PID {pid}"}
-        tty_path = f"/dev/{tty}"
+        tty_path = applescript_str(f"/dev/{tty}")
     except (subprocess.TimeoutExpired, OSError):
         return {"ok": False, "error": "Failed to get TTY"}
 
@@ -280,7 +281,7 @@ def _do_focus(target: str, prompt: str | None) -> dict:
             result["prompt_error"] = "Failed to check foreground"
             return result
 
-        escaped = prompt.replace("\n", " ").replace("\\", "\\\\").replace('"', '\\"')
+        escaped = applescript_str(prompt)
         send_script = f'''
             tell application "iTerm2"
                 repeat with w in windows
@@ -373,7 +374,7 @@ def _do_send(target: str, prompt: str, as_coordinator: bool = False) -> dict:
             return {"ok": False, "error": f"No TTY for PID {pid}"}
         if tpgid != pgid:
             return {"ok": False, "error": "Session not at prompt"}
-        tty_path = f"/dev/{tty}"
+        tty_path = applescript_str(f"/dev/{tty}")
     except (subprocess.TimeoutExpired, OSError):
         return {"ok": False, "error": "Failed to check process"}
 
@@ -498,6 +499,9 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         parsed = urlparse(self.path)
         length = int(self.headers.get("Content-Length", 0))
+        if length > 65536:
+            self.send_error(413, "Request body too large")
+            return
         body = json.loads(self.rfile.read(length)) if length else {}
 
         if parsed.path == "/api/focus":

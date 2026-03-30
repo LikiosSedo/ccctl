@@ -6,6 +6,7 @@ import os
 import subprocess
 import sys
 
+from ccctl.output import applescript_str
 from ccctl.sources import check_alive, read_sessions
 from ccctl.store import load_names
 
@@ -43,6 +44,7 @@ def _get_tty(pid: int) -> str | None:
 
 
 def _focus_iterm(tty: str) -> bool:
+    safe_tty = applescript_str(tty)
     script = f'''
         tell application "iTerm2"
             activate
@@ -51,7 +53,7 @@ def _focus_iterm(tty: str) -> bool:
                     repeat with i from 1 to count of tabs
                         set t to tab i
                         repeat with s in sessions of t
-                            if tty of s is "{tty}" then
+                            if tty of s is "{safe_tty}" then
                                 select t
                                 set index of w to 1
                                 return "ok"
@@ -88,14 +90,15 @@ def _check_foreground(pid: int) -> bool:
 
 def _send_prompt_iterm(tty: str, prompt: str) -> bool:
     """Send a prompt to an iTerm2 session by TTY."""
-    escaped = prompt.replace("\\", "\\\\").replace('"', '\\"')
+    safe_tty = applescript_str(tty)
+    safe_prompt = applescript_str(prompt)
     script = f'''
         tell application "iTerm2"
             repeat with w in windows
                 repeat with t in tabs of w
                     repeat with s in sessions of t
-                        if tty of s is "{tty}" then
-                            tell s to write text (ASCII character 27) & "i" & "{escaped}"
+                        if tty of s is "{safe_tty}" then
+                            tell s to write text (ASCII character 27) & "i" & "{safe_prompt}"
                             return "ok"
                         end if
                     end repeat

@@ -22,9 +22,7 @@ def _detect_terminal() -> str:
     return "terminal"
 
 
-def _applescript_str(s: str) -> str:
-    """Escape a string for embedding in AppleScript double-quoted strings."""
-    return s.replace("\\", "\\\\").replace('"', '\\"')
+from ccctl.output import applescript_str as _applescript_str
 
 
 def _open_in_new_window(cmd: str, cwd: str, title: str = ""):
