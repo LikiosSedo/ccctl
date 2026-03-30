@@ -22,7 +22,7 @@ _claude_dir: Path = Path.home() / ".claude"
 
 
 def _read_terminal_states(pids: list[int]) -> dict[int, dict]:
-    """Read terminal content for multiple PIDs via a single AppleScript call.
+    """Read terminal content for multiple PIDs via per-TTY AppleScript calls.
 
     Returns {pid: {"ready": bool, "preview": str}}.
     """
@@ -46,8 +46,21 @@ def _read_terminal_states(pids: list[int]) -> dict[int, dict]:
     if not tty_to_pid:
         return {}
 
-    # Single AppleScript to read all sessions
-    script = '''
+    # Per-TTY AppleScript: read contents and check for ❯ prompt
+    # Batch all TTYs into one script for efficiency
+    tty_list = list(tty_to_pid.keys())
+    checks = []
+    for tty in tty_list:
+        checks.append(f'''
+                        if ttyPath is "{tty}" then
+                            if c contains "❯" then
+                                set output to output & "{tty}" & "\\tready\\n"
+                            else
+                                set output to output & "{tty}" & "\\tbusy\\n"
+                            end if
+                        end if''')
+    check_block = "\n".join(checks)
+    script = f'''
         set output to ""
         tell application "iTerm2"
             repeat with w in windows
@@ -55,17 +68,7 @@ def _read_terminal_states(pids: list[int]) -> dict[int, dict]:
                     repeat with s in sessions of t
                         set ttyPath to tty of s
                         set c to contents of s
-                        set lineCount to count of paragraphs of c
-                        if lineCount > 6 then
-                            set lastLines to paragraphs (lineCount - 5) thru lineCount of c
-                        else
-                            set lastLines to paragraphs of c
-                        end if
-                        set lineText to ""
-                        repeat with L in lastLines
-                            set lineText to lineText & L & "|||"
-                        end repeat
-                        set output to output & ttyPath & ":::" & lineText & "\\n"
+{check_block}
                     end repeat
                 end repeat
             end repeat
@@ -77,37 +80,23 @@ def _read_terminal_states(pids: list[int]) -> dict[int, dict]:
             ["osascript", "-e", script],
             capture_output=True, text=True, timeout=10,
         )
-        raw = r.stdout.strip()
+        raw = r.stdout
     except (subprocess.TimeoutExpired, OSError):
         return {}
 
     result = {}
-    for line in raw.split("\n"):
-        if ":::" not in line:
+    for line in raw.strip().split("\n"):
+        if "\t" not in line:
             continue
-        tty_path, content = line.split(":::", 1)
+        tty_path, state = line.split("\t", 1)
         tty_path = tty_path.strip()
         pid = tty_to_pid.get(tty_path)
         if pid is None:
             continue
+        content = state.strip()
 
-        lines = [l.strip() for l in content.split("|||") if l.strip()]
-        # Detect ready state: look for ❯ prompt
-        # Detect ready: ❯ prompt OR -- INSERT -- mode indicator
-        ready = any("❯" in l or "-- INSERT --" in l for l in lines)
-        # Build preview: skip separator lines and status bar, find last meaningful text
-        preview_lines = []
-        for l in lines:
-            if l.startswith("─") or l.startswith("━"):
-                continue
-            if "INSERT" in l or "ctx:" in l or "sdliu@" in l:
-                continue
-            if l == "❯" or l.strip() == "":
-                continue
-            preview_lines.append(l)
-        preview = preview_lines[-1] if preview_lines else ""
-
-        result[pid] = {"ready": ready, "preview": preview[:120]}
+        ready = content == "ready"
+        result[pid] = {"ready": ready, "preview": ""}
 
     return result
 
