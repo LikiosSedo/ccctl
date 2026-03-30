@@ -93,7 +93,8 @@ def _read_terminal_states(pids: list[int]) -> dict[int, dict]:
 
         lines = [l.strip() for l in content.split("|||") if l.strip()]
         # Detect ready state: look for ❯ prompt
-        ready = any("❯" in l for l in lines)
+        # Detect ready: ❯ prompt OR -- INSERT -- mode indicator
+        ready = any("❯" in l or "-- INSERT --" in l for l in lines)
         # Build preview: skip separator lines and status bar, find last meaningful text
         preview_lines = []
         for l in lines:
