@@ -22,9 +22,13 @@ _claude_dir: Path = Path.home() / ".claude"
 
 
 def _read_terminal_states(pids: list[int]) -> dict[int, dict]:
-    """Read terminal content for multiple PIDs via per-TTY AppleScript calls.
+    """Read session ready/busy state via iTerm2 tab titles (set by hooks).
 
-    Returns {pid: {"ready": bool, "preview": str}}.
+    Claude Code hooks set tab title to '✅ idle' (Stop) or '⏳ working'
+    (UserPromptSubmit). We read tab titles — much faster than reading
+    terminal contents.
+
+    Returns {pid: {"ready": bool}}.
     """
     if not pids:
         return {}
@@ -46,29 +50,16 @@ def _read_terminal_states(pids: list[int]) -> dict[int, dict]:
     if not tty_to_pid:
         return {}
 
-    # Per-TTY AppleScript: read contents and check for ❯ prompt
-    # Batch all TTYs into one script for efficiency
-    tty_list = list(tty_to_pid.keys())
-    checks = []
-    for tty in tty_list:
-        checks.append(f'''
-                        if ttyPath is "{tty}" then
-                            if c contains "❯" then
-                                set output to output & "{tty}" & "\\tready\\n"
-                            else
-                                set output to output & "{tty}" & "\\tbusy\\n"
-                            end if
-                        end if''')
-    check_block = "\n".join(checks)
-    script = f'''
+    # Single AppleScript: read tab titles for all matching TTYs
+    script = '''
         set output to ""
         tell application "iTerm2"
             repeat with w in windows
                 repeat with t in tabs of w
                     repeat with s in sessions of t
                         set ttyPath to tty of s
-                        set c to contents of s
-{check_block}
+                        set tabName to name of t
+                        set output to output & ttyPath & "\t" & tabName & "\n"
                     end repeat
                 end repeat
             end repeat
@@ -78,7 +69,7 @@ def _read_terminal_states(pids: list[int]) -> dict[int, dict]:
     try:
         r = subprocess.run(
             ["osascript", "-e", script],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True, text=True, timeout=5,
         )
         raw = r.stdout
     except (subprocess.TimeoutExpired, OSError):
@@ -88,15 +79,16 @@ def _read_terminal_states(pids: list[int]) -> dict[int, dict]:
     for line in raw.strip().split("\n"):
         if "\t" not in line:
             continue
-        tty_path, state = line.split("\t", 1)
+        tty_path, tab_title = line.split("\t", 1)
         tty_path = tty_path.strip()
         pid = tty_to_pid.get(tty_path)
         if pid is None:
             continue
-        content = state.strip()
 
-        ready = content == "ready"
-        result[pid] = {"ready": ready, "preview": ""}
+        # Hook sets: "✅ idle" or "⏳ working"
+        # No hook yet (new session) → unknown, treat as busy
+        ready = "✅" in tab_title or "idle" in tab_title.lower()
+        result[pid] = {"ready": ready}
 
     return result
 
@@ -1288,7 +1280,7 @@ function toast(msg, ok) {
 refresh();
 refreshStatus();
 setInterval(refresh, 5000);
-setInterval(refreshStatus, 20000);
+setInterval(refreshStatus, 5000);
 </script>
 </body>
 </html>'''
