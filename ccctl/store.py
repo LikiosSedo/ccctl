@@ -39,3 +39,15 @@ def set_name(claude_dir: Path, session_id: str, name: str):
 
 def get_name(claude_dir: Path, session_id: str) -> str | None:
     return load_names(claude_dir).get(session_id)
+
+
+def load_config(claude_dir: Path) -> dict:
+    f = _store_dir(claude_dir) / "config.json"
+    if f.exists():
+        return json.loads(f.read_text())
+    return {}
+
+
+def save_config(claude_dir: Path, config: dict):
+    f = _store_dir(claude_dir) / "config.json"
+    f.write_text(json.dumps(config, indent=2, ensure_ascii=False))

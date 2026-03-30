@@ -65,6 +65,9 @@ def main():
     new_p.add_argument("--cwd", help="Working directory (default: current)")
 
     # --- intelligence ---
+    dash_p = sub.add_parser("dashboard", help="Local web UI for session overview")
+    dash_p.add_argument("--port", type=int, default=8420, help="Port (default: 8420)")
+
     sum_p = sub.add_parser("summary", help="Full topology and activity overview")
     sum_p.add_argument("--scope", help="Root directory to scan (default: ~/project)")
     sum_p.add_argument("--days", type=int, help="Limit to last N days")
@@ -87,6 +90,7 @@ def main():
         "focus":  lambda: _lazy("ccctl.cmd_focus", "run", args),
         "resume": lambda: _lazy("ccctl.cmd_open", "run_resume", args),
         "new":    lambda: _lazy("ccctl.cmd_open", "run_new", args),
+        "dashboard": lambda: _lazy("ccctl.cmd_dashboard", "run", args),
         "summary": lambda: _lazy("ccctl.cmd_summary", "run", args),
     }
     handlers[args.command]()
