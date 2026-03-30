@@ -291,8 +291,6 @@ def _inject_prompt(tty_path: str, prompt: str) -> tuple[bool, str | None]:
             set old_clipboard to the clipboard
             set the clipboard to "{escaped}"
             tell application "System Events"
-                key code 53
-                keystroke "i"
                 keystroke "v" using command down
             end tell
             delay 0.05

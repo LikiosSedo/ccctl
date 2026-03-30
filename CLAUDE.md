@@ -86,6 +86,21 @@ This is event-driven (not polling), zero overhead, and 100% reliable. The dashbo
 - **Silent dispatch**: Coordinator bar sends prompts without switching windows
 - Pure stdlib HTTP server, zero dependencies, HTML/CSS/JS embedded in one Python file
 
+## Supported Runtime Environment
+
+Current target environment:
+
+- macOS only
+- Claude Code local sessions
+- iTerm2: full support
+- Terminal.app: full support
+- tmux: partial support for `new` / `resume`; not a first-class dashboard dispatch target
+
+Practical rule:
+
+- If the user wants dashboard-driven focus/send/rename, assume iTerm2 or Terminal.app
+- If the user is in tmux or another terminal, treat dispatch automation as degraded unless verified
+
 ## Development Rules
 
 ### Build for the actual user

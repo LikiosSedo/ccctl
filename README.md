@@ -131,6 +131,38 @@ Features:
 - Rename sessions inline (hover card → click ✎)
 - View modes: Flat / By Project / By Status
 
+### Supported Environments
+
+ccctl is currently designed for local macOS terminal workflows.
+
+- OS: macOS
+- AI runtime: Claude Code
+- Supported terminals for dispatch/focus/dashboard actions:
+  - iTerm2: full support
+  - Terminal.app: full support
+- Partially supported:
+  - tmux: `new`/`resume` window creation works, but dashboard focus/injection is not a first-class path
+- Not currently targeted:
+  - Linux terminals
+  - Windows terminals
+  - Arbitrary third-party macOS terminals without dedicated AppleScript integration
+
+### Terminal Capability Matrix
+
+| Capability | iTerm2 | Terminal.app | tmux |
+|-----------|--------|--------------|------|
+| `ccctl new` | Yes | Yes | Yes |
+| `ccctl resume` | Yes | Yes | Yes |
+| `ccctl focus` | Yes | Yes | No |
+| Dashboard click-to-focus | Yes | Yes | No |
+| Dashboard Send / Dispatch | Yes | Yes | No |
+| Inline Rename sync (`/rename`) | Yes | Yes | No |
+
+Notes:
+- Dashboard dispatch/focus/rename rely on terminal automation and TTY matching.
+- Terminal.app support uses AppleScript and System Events on macOS.
+- If macOS blocks automation, focus/send/rename can fail until Terminal/osascript permissions are granted.
+
 ## Design
 
 ccctl is a **dispatch layer**, not a data layer.
@@ -138,7 +170,7 @@ ccctl is a **dispatch layer**, not a data layer.
 - Reads Claude Code's native data (`sessions/*.json`, `history.jsonl`, process table) in real-time
 - Only owned data: session names (`~/.claude/ccctl/names.json`) and coordinator config
 - Status detection via Claude Code hooks (file-based, zero overhead)
-- iTerm2 integration: focus tabs, inject prompts, sync `/rename`
+- Terminal integration: iTerm2 and Terminal.app focus tabs, inject prompts, sync `/rename`
 - `--json` output on every command for AI coordinator consumption
 - Pure Python stdlib, zero dependencies
 - Single-file HTTP dashboard (no frontend framework, no build step)
@@ -146,7 +178,9 @@ ccctl is a **dispatch layer**, not a data layer.
 ## Requirements
 
 - Python 3.10+
-- macOS (iTerm2 recommended for full features; Terminal.app and tmux partially supported)
+- macOS
+- iTerm2 or Terminal.app for full dispatch/dashboard workflow
+- tmux only for partial `new` / `resume` support
 - Claude Code
 
 ## License
