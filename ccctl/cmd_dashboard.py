@@ -877,8 +877,7 @@ HTML = '''<!DOCTYPE html>
 <div id="dispatch-bar" class="dispatch-bar">
   <div class="label" id="dispatch-label"></div>
   <div class="row">
-    <input id="dispatch-input" placeholder="Send instruction to coordinator..."
-      onkeyup="onEnter(event, sendToCoordinator)">
+    <input id="dispatch-input" placeholder="Send instruction to coordinator...">
     <button onclick="sendToCoordinator()">Dispatch</button>
   </div>
 </div>
