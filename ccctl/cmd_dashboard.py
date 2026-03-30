@@ -23,6 +23,17 @@ from ccctl.store import load_names, load_config, save_config
 _claude_dir: Path = Path.home() / ".claude"
 
 
+def _detect_terminal() -> str:
+    term = os.environ.get("TERM_PROGRAM", "")
+    if "iTerm" in term:
+        return "iterm"
+    if "Apple_Terminal" in term:
+        return "terminal"
+    if os.environ.get("TMUX"):
+        return "tmux"
+    return "terminal"
+
+
 def _read_terminal_states(pids: list[int]) -> dict[int, dict]:
     """Read session ready/busy state from status files written by hooks.
 
@@ -196,6 +207,109 @@ def _ago(ts: float | None, now: float) -> str:
     return _format_ago(ts, now)
 
 
+def _focus_terminal_tty(tty_path: str) -> tuple[bool, str | None]:
+    terminal = _detect_terminal()
+
+    if terminal == "iterm":
+        script = f'''
+            tell application "iTerm2"
+                activate
+                repeat with w in windows
+                    tell w
+                        repeat with i from 1 to count of tabs
+                            set t to tab i
+                            repeat with s in sessions of t
+                                if tty of s is "{tty_path}" then
+                                    select t
+                                    set index of w to 1
+                                    return "ok"
+                                end if
+                            end repeat
+                        end repeat
+                    end tell
+                end repeat
+                return "not found"
+            end tell
+        '''
+        not_found = "Tab not found in iTerm2"
+    elif terminal == "terminal":
+        script = f'''
+            tell application "Terminal"
+                activate
+                repeat with w in windows
+                    repeat with t in tabs of w
+                        if tty of t is "{tty_path}" then
+                            set selected of t to true
+                            set frontmost of w to true
+                            return "ok"
+                        end if
+                    end repeat
+                end repeat
+                return "not found"
+            end tell
+        '''
+        not_found = "Tab not found in Terminal.app"
+    else:
+        return False, f"Focus not supported in {terminal}"
+
+    try:
+        r = subprocess.run(
+            ["osascript", "-e", script],
+            capture_output=True, text=True, timeout=5,
+        )
+        if r.stdout.strip() == "ok":
+            return True, None
+        return False, not_found
+    except (subprocess.TimeoutExpired, OSError):
+        return False, "AppleScript failed"
+
+
+def _inject_prompt(tty_path: str, prompt: str) -> tuple[bool, str | None]:
+    terminal = _detect_terminal()
+    escaped = applescript_str(prompt)
+
+    if terminal == "iterm":
+        script = f'''
+            tell application "iTerm2"
+                repeat with w in windows
+                    repeat with t in tabs of w
+                        repeat with s in sessions of t
+                            if tty of s is "{tty_path}" then
+                                tell s to write text (ASCII character 27) & "i" & "{escaped}"
+                                return "ok"
+                            end if
+                        end repeat
+                    end repeat
+                end repeat
+            end tell
+        '''
+    elif terminal == "terminal":
+        focused, error = _focus_terminal_tty(tty_path)
+        if not focused:
+            return False, error
+        script = f'''
+            tell application "System Events"
+                key code 53
+                keystroke "i"
+                keystroke "{escaped}"
+                return "ok"
+            end tell
+        '''
+    else:
+        return False, f"Prompt injection not supported in {terminal}"
+
+    try:
+        r = subprocess.run(
+            ["osascript", "-e", script],
+            capture_output=True, text=True, timeout=5,
+        )
+        if r.stdout.strip() == "ok":
+            return True, None
+        return False, "Session tab not found"
+    except (subprocess.TimeoutExpired, OSError):
+        return False, "AppleScript failed"
+
+
 def _do_focus(target: str, prompt: str | None) -> dict:
     """Focus a session, optionally send prompt. Returns result dict."""
     sessions = read_sessions(_claude_dir)
@@ -228,35 +342,9 @@ def _do_focus(target: str, prompt: str | None) -> dict:
     except (subprocess.TimeoutExpired, OSError):
         return {"ok": False, "error": "Failed to get TTY"}
 
-    focus_script = f'''
-        tell application "iTerm2"
-            activate
-            repeat with w in windows
-                tell w
-                    repeat with i from 1 to count of tabs
-                        set t to tab i
-                        repeat with s in sessions of t
-                            if tty of s is "{tty_path}" then
-                                select t
-                                set index of w to 1
-                                return "ok"
-                            end if
-                        end repeat
-                    end repeat
-                end tell
-            end repeat
-            return "not found"
-        end tell
-    '''
-    try:
-        r = subprocess.run(
-            ["osascript", "-e", focus_script],
-            capture_output=True, text=True, timeout=5,
-        )
-        if r.stdout.strip() != "ok":
-            return {"ok": False, "error": "Tab not found in iTerm2"}
-    except (subprocess.TimeoutExpired, OSError):
-        return {"ok": False, "error": "AppleScript failed"}
+    focused, error = _focus_terminal_tty(tty_path)
+    if not focused:
+        return {"ok": False, "error": error}
 
     result = {"ok": True, "focused": True}
 
@@ -276,30 +364,10 @@ def _do_focus(target: str, prompt: str | None) -> dict:
             result["prompt_error"] = "Failed to check foreground"
             return result
 
-        escaped = applescript_str(prompt)
-        send_script = f'''
-            tell application "iTerm2"
-                repeat with w in windows
-                    repeat with t in tabs of w
-                        repeat with s in sessions of t
-                            if tty of s is "{tty_path}" then
-                                tell s to write text (ASCII character 27) & "i" & "{escaped}"
-                                return "ok"
-                            end if
-                        end repeat
-                    end repeat
-                end repeat
-            end tell
-        '''
-        try:
-            r = subprocess.run(
-                ["osascript", "-e", send_script],
-                capture_output=True, text=True, timeout=5,
-            )
-            result["prompt_sent"] = r.stdout.strip() == "ok"
-        except (subprocess.TimeoutExpired, OSError):
-            result["prompt_sent"] = False
-            result["prompt_error"] = "Send failed"
+        sent, send_error = _inject_prompt(tty_path, prompt)
+        result["prompt_sent"] = sent
+        if send_error:
+            result["prompt_error"] = send_error
 
     return result
 
@@ -373,34 +441,10 @@ def _do_send(target: str, prompt: str, as_coordinator: bool = False) -> dict:
     except (subprocess.TimeoutExpired, OSError):
         return {"ok": False, "error": "Failed to check process"}
 
-    # Silent inject — no activate, no tab switch
-    # Replace newlines with spaces to prevent premature submission
-    escaped = prompt.replace("\n", " ").replace("\\", "\\\\").replace('"', '\\"')
-    # Escape (ensure NORMAL mode) + i (enter INSERT mode) + prompt
-    script = f'''
-        tell application "iTerm2"
-            repeat with w in windows
-                repeat with t in tabs of w
-                    repeat with s in sessions of t
-                        if tty of s is "{tty_path}" then
-                            tell s to write text (ASCII character 27) & "i" & "{escaped}"
-                            return "ok"
-                        end if
-                    end repeat
-                end repeat
-            end repeat
-        end tell
-    '''
-    try:
-        r = subprocess.run(
-            ["osascript", "-e", script],
-            capture_output=True, text=True, timeout=5,
-        )
-        if r.stdout.strip() == "ok":
-            return {"ok": True, "sent": True}
-        return {"ok": False, "error": "Session tab not found"}
-    except (subprocess.TimeoutExpired, OSError):
-        return {"ok": False, "error": "AppleScript failed"}
+    sent, error = _inject_prompt(tty_path, prompt.replace("\n", " "))
+    if sent:
+        return {"ok": True, "sent": True}
+    return {"ok": False, "error": error or "Send failed"}
 
 
 def _do_rename(session_id: str, new_name: str) -> dict:
