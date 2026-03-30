@@ -72,6 +72,46 @@ def _focus_iterm(tty: str) -> bool:
         return False
 
 
+def _check_foreground(pid: int) -> bool:
+    """Check if pid is the foreground process on its TTY."""
+    try:
+        r = subprocess.run(
+            ["ps", "-o", "tpgid=,pgid=", "-p", str(pid)],
+            capture_output=True, text=True, timeout=5,
+        )
+        parts = r.stdout.strip().split()
+        return len(parts) >= 2 and parts[0] == parts[1]
+    except (subprocess.TimeoutExpired, OSError):
+        return False
+
+
+def _send_prompt_iterm(tty: str, prompt: str) -> bool:
+    """Send a prompt to an iTerm2 session by TTY."""
+    escaped = prompt.replace("\\", "\\\\").replace('"', '\\"')
+    script = f'''
+        tell application "iTerm2"
+            repeat with w in windows
+                repeat with t in tabs of w
+                    repeat with s in sessions of t
+                        if tty of s is "{tty}" then
+                            tell s to write text "{escaped}"
+                            return "ok"
+                        end if
+                    end repeat
+                end repeat
+            end repeat
+        end tell
+    '''
+    try:
+        r = subprocess.run(
+            ["osascript", "-e", script],
+            capture_output=True, text=True, timeout=5,
+        )
+        return r.stdout.strip() == "ok"
+    except (subprocess.TimeoutExpired, OSError):
+        return False
+
+
 def run(args):
     sessions = read_sessions(args.claude_dir)
     ccctl_names = load_names(args.claude_dir)
@@ -105,3 +145,15 @@ def run(args):
     else:
         print(f"Focus not supported in {term or 'this terminal'}.")
         print(f"Session '{name}' is on {tty}")
+        return
+
+    # Send prompt if provided
+    prompt = getattr(args, "prompt", None)
+    if prompt:
+        if not _check_foreground(pid):
+            print(f"Session not at prompt (not foreground process), skipping send", file=sys.stderr)
+            return
+        if _send_prompt_iterm(tty, prompt):
+            print(f"Sent → {prompt[:60]}{'…' if len(prompt) > 60 else ''}")
+        else:
+            print(f"Failed to send prompt", file=sys.stderr)

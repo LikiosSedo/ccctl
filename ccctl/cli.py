@@ -57,6 +57,7 @@ def main():
 
     focus_p = sub.add_parser("focus", help="Switch to a running session's terminal tab")
     focus_p.add_argument("target", help="PID, name, or session ID prefix")
+    focus_p.add_argument("prompt", nargs="?", help="Send prompt after focusing")
 
     new_p = sub.add_parser("new", help="Start a new Claude Code session in a new terminal")
     new_p.add_argument("prompt", nargs="?", help="Initial prompt")
