@@ -7,7 +7,7 @@ import shlex
 import subprocess
 import sys
 
-from ccctl.sources import check_alive, read_sessions
+from ccctl.sources import check_alive, lookup_session_project, read_sessions
 from ccctl.store import load_names
 
 
@@ -89,10 +89,11 @@ def _find_session(sessions: list[dict], ccctl_names: dict[str, str], query: str)
     for s in sessions:
         if s.get("sessionId", "").startswith(query):
             return s
-    # Name store fallback — we have session_id but no live metadata
+    # Name store fallback — session file gone, but we can recover cwd from history
     name_to_sid = {v: k for k, v in ccctl_names.items()}
     if query in name_to_sid:
-        return {"sessionId": name_to_sid[query], "name": query}
+        sid = name_to_sid[query]
+        return {"sessionId": sid, "name": query, "_needs_cwd_lookup": True}
     return None
 
 
@@ -107,9 +108,13 @@ def run_resume(args):
 
     pid = target.get("pid")
     sid = target["sessionId"]
-    cwd = target.get("cwd") or os.getcwd()
     name = ccctl_names.get(sid) or target.get("name") or sid[:8]
     alive = check_alive(pid) if pid else False
+
+    # Resolve cwd: live session file > history.jsonl > current dir
+    cwd = target.get("cwd")
+    if not cwd or target.get("_needs_cwd_lookup"):
+        cwd = lookup_session_project(args.claude_dir, sid) or os.getcwd()
 
     if alive:
         print(f"⚠ Session '{name}' (PID {pid}) is still running.")
