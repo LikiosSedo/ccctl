@@ -1074,7 +1074,7 @@ function renderCard(s, i) {
   return `
     <div class="card ${s.status}${coordClass}" onclick="doFocus('${esc(s.name)}', event)">
       <div class="top">
-        <span class="name">${readyDot} ${esc(s.name)} <span class="rename-btn" onclick="event.stopPropagation();startRename('${s.session_id}','${esc(s.name)}',this.parentElement)" title="Rename">&#9998;</span></span>
+        <span class="name">${readyDot} ${esc(s.name)} <span class="rename-btn" onclick="event.stopPropagation();startRename('${s.session_id}','${esc(s.name)}',this.parentElement)" title="Manual rename">&#9998;</span><span class="rename-btn" onclick="event.stopPropagation();autoRename('${esc(s.name)}')" title="Auto-name by AI">&#10033;</span></span>
         <span class="badge ${s.status}">${s.status} \\u00b7 ${esc(s.last_active_ago)}</span>
       </div>
       <div class="meta">${esc(s.project)} \\u00b7 <span class="pid-copy" onclick="event.stopPropagation();copyPid(${s.pid})" title="Click to copy PID">PID ${s.pid}</span></div>
@@ -1281,6 +1281,17 @@ async function sendToCoordinator() {
   } else {
     toast(res.error || "Failed", false);
   }
+}
+
+async function autoRename(name) {
+  // Inject /rename (no argument) — Claude Code will auto-name based on content
+  const r = await fetch("/api/send", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({target: name, prompt: "/rename"}),
+  });
+  const res = await r.json();
+  toast(res.ok ? "Auto-naming " + name + "..." : (res.error || "Failed"), res.ok);
 }
 
 function startRename(sid, oldName, el) {
