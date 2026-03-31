@@ -723,6 +723,12 @@ HTML = '''<!DOCTYPE html>
     background: #1a1a2e;
     border-radius: 4px;
   }
+  .pid-copy {
+    cursor: pointer;
+    border-radius: 3px;
+    padding: 0 3px;
+  }
+  .pid-copy:hover { background: #8be9fd22; color: #8be9fd; }
   .rename-btn {
     font-size: 14px;
     color: #888;
@@ -1071,7 +1077,7 @@ function renderCard(s, i) {
         <span class="name">${readyDot} ${esc(s.name)} <span class="rename-btn" onclick="event.stopPropagation();startRename('${s.session_id}','${esc(s.name)}',this.parentElement)" title="Rename">&#9998;</span></span>
         <span class="badge ${s.status}">${s.status} \\u00b7 ${esc(s.last_active_ago)}</span>
       </div>
-      <div class="meta">${esc(s.project)} \\u00b7 PID ${s.pid}</div>
+      <div class="meta">${esc(s.project)} \\u00b7 <span class="pid-copy" onclick="event.stopPropagation();copyPid(${s.pid})" title="Click to copy PID">PID ${s.pid}</span></div>
       <div class="last-input">${esc(s.last_input || "-")}</div>
       ${previewHtml}
       <div class="actions" onclick="event.stopPropagation()">
@@ -1173,6 +1179,11 @@ function renderHistory() {
       </div>
     </div>`;
   }).join("");
+}
+
+function copyPid(pid) {
+  navigator.clipboard.writeText(String(pid));
+  toast("Copied PID " + pid, true);
 }
 
 function esc(s) {
