@@ -67,7 +67,7 @@ def _open_in_new_window(cmd: str, cwd: str, title: str = ""):
 def run_resume(args):
     sessions = read_sessions(args.claude_dir)
     ccctl_names = load_names(args.claude_dir)
-    target = find_session(sessions, ccctl_names, args.target, include_name_store=True)
+    target = find_session(sessions, ccctl_names, args.target, include_name_store=True, claude_dir=args.claude_dir)
 
     if not target:
         print(f"No session found: {args.target}", file=sys.stderr)

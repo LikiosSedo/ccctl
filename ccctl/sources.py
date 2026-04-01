@@ -146,12 +146,14 @@ def find_session(
     ccctl_names: dict[str, str],
     query: str,
     include_name_store: bool = False,
+    claude_dir: Path | None = None,
 ) -> dict | None:
     """Find a session by PID, ccctl name, native name, or session_id prefix.
 
     Searches in order: PID → ccctl name → native name → session_id prefix.
     If include_name_store is True, also checks the name store for sessions
-    whose session files are gone (for resume of stopped sessions).
+    whose session files are gone (for resume of stopped sessions), and
+    falls back to history.jsonl for unnamed dead sessions.
     """
     # By PID
     for s in sessions:
@@ -176,6 +178,15 @@ def find_session(
         if query in name_to_sid:
             sid = name_to_sid[query]
             return {"sessionId": sid, "name": query, "_needs_cwd_lookup": True}
+    # History fallback: resolve session_id prefix from history.jsonl
+    if include_name_store and claude_dir:
+        full_sid = resolve_session_id(claude_dir, query)
+        if full_sid:
+            name = ccctl_names.get(full_sid)
+            result = {"sessionId": full_sid, "_needs_cwd_lookup": True}
+            if name:
+                result["name"] = name
+            return result
     return None
 
 

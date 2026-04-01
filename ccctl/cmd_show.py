@@ -16,7 +16,7 @@ from ccctl.store import get_name, load_names
 def run(args):
     sessions = read_sessions(args.claude_dir)
     ccctl_names = load_names(args.claude_dir)
-    target = find_session(sessions, ccctl_names, args.id)
+    target = find_session(sessions, ccctl_names, args.id, include_name_store=True, claude_dir=args.claude_dir)
 
     if not target:
         print(f"No session found matching: {args.id}", file=sys.stderr)
