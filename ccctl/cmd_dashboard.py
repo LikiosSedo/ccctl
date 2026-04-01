@@ -287,13 +287,19 @@ def _inject_prompt(tty_path: str, prompt: str) -> tuple[bool, str | None]:
         focused, error = _focus_terminal_tty(tty_path)
         if not focused:
             return False, error
+        # Terminal.app has no direct write-to-session API like iTerm2.
+        # Use clipboard paste + Return. Save/restore clipboard with a
+        # generous delay to reduce race conditions.
         script = f'''
             set old_clipboard to the clipboard
             set the clipboard to "{escaped}"
+            delay 0.1
             tell application "System Events"
                 keystroke "v" using command down
+                delay 0.1
+                keystroke return
             end tell
-            delay 0.05
+            delay 0.1
             set the clipboard to old_clipboard
             return "ok"
         '''

@@ -52,14 +52,22 @@ def _open_in_new_window(cmd: str, cwd: str, title: str = ""):
         )
         where = "tmux window"
     else:
+        # Open a new tab in the front Terminal window (falls back to new
+        # window if none exists).
         apple_script = f'''
             tell application "Terminal"
-                do script "{escaped}"
+                if (count of windows) > 0 then
+                    tell front window
+                        set newTab to do script "{escaped}"
+                    end tell
+                else
+                    do script "{escaped}"
+                end if
                 activate
             end tell
         '''
         subprocess.run(["osascript", "-e", apple_script], check=True)
-        where = "Terminal window"
+        where = "Terminal tab"
 
     return where
 
